@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("APP_DATABASE_URL")
+  directUrl = env("APP_DATABASE_DIRECT_URL")
+}
+
+enum Role {
+  VENDOR
+  MANAGER
+}
+
+enum CardStatus {
+  IDENTIFIED
+  CONTACTED
+  NEGOTIATING
+  EXPANDED
+  LOST
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  CANCELLED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(VENDOR)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedCards    KanbanCard[]     @relation("AssignedCards")
+  createdCards     KanbanCard[]     @relation("CreatedCards")
+  activities       KanbanActivity[]
+  notes            KanbanNote[]
+  sentMessages     Message[]        @relation("SentMessages")
+  receivedMessages Message[]        @relation("ReceivedMessages")
+  uploadedFiles    File[]
+  expansionGoals   ExpansionGoal[]
+  refreshTokens    RefreshToken[]
+}
+
+model KanbanCard {
+  id           String     @id @default(cuid())
+  clientId     String
+  clientName   String
+  status       CardStatus @default(IDENTIFIED)
+  priority     Priority   @default(MEDIUM)
+  assignedToId String?
+  createdById  String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  assignedTo User?            @relation("AssignedCards", fields: [assignedToId], references: [id])
+  createdBy  User             @relation("CreatedCards", fields: [createdById], references: [id])
+  activities KanbanActivity[]
+  notes      KanbanNote[]
+  files      File[]
+  goals      ExpansionGoal[]
+
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model KanbanNote {
+  id        String     @id @default(cuid())
+  cardId    String
+  userId    String
+  content   String     @db.Text
+  createdAt DateTime   @default(now())
+
+  card KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id])
+
+  @@index([cardId])
+}
+
+model KanbanActivity {
+  id        String   @id @default(cuid())
+  cardId    String
+  userId    String
+  action    String
+  oldStatus String?
+  newStatus String?
+  createdAt DateTime @default(now())
+
+  card KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id])
+
+  @@index([cardId])
+}
+
+model Message {
+  id         String    @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String    @db.Text
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id])
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  @@index([senderId, receiverId])
+  @@index([receiverId, readAt])
+}
+
+model File {
+  id           String   @id @default(cuid())
+  name         String
+  path         String
+  mimeType     String
+  uploadedById String
+  clientId     String?
+  cardId       String?
+  createdAt    DateTime @default(now())
+
+  uploadedBy User        @relation(fields: [uploadedById], references: [id])
+  card       KanbanCard? @relation(fields: [cardId], references: [id])
+
+  @@index([clientId])
+  @@index([cardId])
+}
+
+model ExpansionGoal {
+  id          String     @id @default(cuid())
+  clientId    String
+  vendorId    String
+  cardId      String?
+  startDate   DateTime
+  baselineAvg Float
+  targetValue Float?
+  status      GoalStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  vendor User        @relation(fields: [vendorId], references: [id])
+  card   KanbanCard? @relation(fields: [cardId], references: [id])
+
+  @@index([clientId])
+  @@index([vendorId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ───── Cache dos dados do BI (sincronizado pelo agente de sync) ─────
+
+model BiClient {
+  cnpj        String   @id
+  name        String
+  groupedName String
+  city        String?
+  state       String?
+  segment     String?
+  curve       String?
+  tipo        String?
+  syncedAt    DateTime @default(now())
+
+  @@map("bi_clients")
+}
+
+model BiClientMonthly {
+  id              Int      @id @default(autoincrement())
+  clientCnpj      String
+  clientGrouped   String
+  year            Int
+  month           Int
+  billing         Float    @default(0)
+  deliveriesCount Int      @default(0)
+  volumesCount    Int      @default(0)
+  totalWeightKg   Float    @default(0)
+  syncedAt        DateTime @default(now())
+
+  @@unique([clientCnpj, year, month])
+  @@index([clientCnpj])
+  @@map("bi_client_monthly")
+}
+
+model BiClientRoute {
+  id            Int      @id @default(autoincrement())
+  clientCnpj    String
+  deliveryCity  String
+  deliveryState String
+  firstSeen     DateTime
+  lastSeen      DateTime
+  tripCount     Int      @default(1)
+  syncedAt      DateTime @default(now())
+
+  @@unique([clientCnpj, deliveryCity, deliveryState])
+  @@index([clientCnpj])
+  @@map("bi_client_routes")
+}
+
+model BiAllRoute {
+  id            Int      @id @default(autoincrement())
+  deliveryCity  String
+  deliveryState String
+  avgRevenue    Float    @default(0)
+  tripCount     Int      @default(0)
+  syncedAt      DateTime @default(now())
+
+  @@unique([deliveryCity, deliveryState])
+  @@map("bi_all_routes")
+}

@@ -1,0 +1,20 @@
+{
+  "name": "salexpress-sync-agent",
+  "version": "1.0.0",
+  "description": "Agente de sincronização BI → Supabase",
+  "scripts": {
+    "sync": "tsx sync-agent.ts",
+    "sync:build": "tsc --outDir dist",
+    "sync:prod": "node dist/sync-agent.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.1",
+    "dotenv": "^16.4.5",
+    "mysql2": "^3.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
