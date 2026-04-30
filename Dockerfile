@@ -5,12 +5,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci && npx prisma generate
+RUN npm ci --omit=dev && npx prisma generate
 
-COPY tsconfig.json ./
-COPY src ./src/
-
-RUN npm run build
+COPY dist ./dist/
 
 EXPOSE 3000
 
