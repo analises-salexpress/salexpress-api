@@ -5,10 +5,13 @@
 ## URL Base
 
 ```
-https://<seu-subdominio>.up.railway.app
+https://api-production-d892.up.railway.app
 ```
 
 Configure essa URL nas variáveis de ambiente do seu projeto Lovable como `VITE_API_BASE_URL`.
+
+> A documentação interativa Swagger está disponível em:
+> `https://api-production-d892.up.railway.app/docs`
 
 ---
 
@@ -38,10 +41,11 @@ Content-Type: application/json
 Resposta:
 ```json
 {
-  "accessToken": "eyJ...",
-  "refreshToken": "eyJ...",
-  "user": { "id": "...", "name": "...", "email": "...", "role": "VENDOR" }
-}
+  "data": {
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ...",
+    "user": { "id": "...", "name": "...", "email": "...", "role": "VENDOR" }
+  }
 ```
 
 #### Renovar token
@@ -49,7 +53,7 @@ Resposta:
 POST /auth/refresh
 { "refreshToken": "eyJ..." }
 ```
-Resposta: `{ "accessToken": "eyJ..." }`
+Resposta: `{ "data": { "accessToken": "eyJ..." } }`
 
 #### Logout
 ```

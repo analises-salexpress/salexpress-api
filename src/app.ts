@@ -1,6 +1,9 @@
+import 'express-async-errors'
 import express from 'express'
 import cors from 'cors'
 import path from 'path'
+import swaggerUi from 'swagger-ui-express'
+import { swaggerSpec } from './swagger'
 import authRoutes from './routes/auth'
 import usersRoutes from './routes/users'
 import insightsRoutes from './routes/insights'
@@ -28,6 +31,11 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
 })
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'Sal Express API',
+  customCss: '.swagger-ui .topbar { display: none }',
+}))
 
 app.use('/auth', authRoutes)
 app.use('/users', usersRoutes)
