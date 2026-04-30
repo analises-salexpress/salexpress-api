@@ -28,7 +28,7 @@ app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use('/uploads', express_1.default.static(path_1.default.join(process.cwd(), 'uploads')));
 app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', version: '1.0.1', timestamp: new Date().toISOString() });
 });
 app.get('/docs/openapi.json', (_req, res) => {
     res.json(swagger_1.swaggerSpec);
