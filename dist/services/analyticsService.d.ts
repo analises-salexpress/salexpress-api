@@ -58,11 +58,11 @@ export declare function getClients(opts: {
 }): Promise<{
     clients: {
         name: string;
-        syncedAt: Date;
         state: string | null;
         segment: string | null;
         curve: string | null;
         cnpj: string;
+        syncedAt: Date;
         groupedName: string;
         city: string | null;
         tipo: string | null;
@@ -71,11 +71,11 @@ export declare function getClients(opts: {
 }>;
 export declare function getClientById(cnpj: string): Promise<{
     name: string;
-    syncedAt: Date;
     state: string | null;
     segment: string | null;
     curve: string | null;
     cnpj: string;
+    syncedAt: Date;
     groupedName: string;
     city: string | null;
     tipo: string | null;

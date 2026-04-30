@@ -3,9 +3,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+require("express-async-errors");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
+const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
+const swagger_1 = require("./swagger");
 const auth_1 = __importDefault(require("./routes/auth"));
 const users_1 = __importDefault(require("./routes/users"));
 const insights_1 = __importDefault(require("./routes/insights"));
@@ -28,6 +31,10 @@ app.use('/uploads', express_1.default.static(path_1.default.join(process.cwd(), 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() });
 });
+app.use('/docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swagger_1.swaggerSpec, {
+    customSiteTitle: 'Sal Express API',
+    customCss: '.swagger-ui .topbar { display: none }',
+}));
 app.use('/auth', auth_1.default);
 app.use('/users', users_1.default);
 app.use('/insights', insights_1.default);
