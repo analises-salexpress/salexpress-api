@@ -7,7 +7,6 @@ require("express-async-errors");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
-const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
 const swagger_1 = require("./swagger");
 const auth_1 = __importDefault(require("./routes/auth"));
 const users_1 = __importDefault(require("./routes/users"));
@@ -31,10 +30,35 @@ app.use('/uploads', express_1.default.static(path_1.default.join(process.cwd(), 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() });
 });
-app.use('/docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swagger_1.swaggerSpec, {
-    customSiteTitle: 'Sal Express API',
-    customCss: '.swagger-ui .topbar { display: none }',
-}));
+app.get('/docs/openapi.json', (_req, res) => {
+    res.json(swagger_1.swaggerSpec);
+});
+app.get('/docs', (_req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Sal Express API</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/docs/openapi.json',
+      dom_id: '#swagger-ui',
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+      deepLinking: true,
+      persistAuthorization: true,
+    })
+  </script>
+</body>
+</html>`);
+});
 app.use('/auth', auth_1.default);
 app.use('/users', users_1.default);
 app.use('/insights', insights_1.default);
