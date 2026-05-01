@@ -10,8 +10,14 @@ router.use(auth_1.authenticate);
 router.get('/opportunities', async (req, res) => {
     const limit = Math.min(Number(req.query.limit ?? 50), 200);
     const offset = Number(req.query.offset ?? 0);
-    const { opportunities, total } = await (0, expansionService_1.getOpportunities)(limit, offset);
-    res.json({ data: opportunities, total, limit, offset });
+    try {
+        const { opportunities, total } = await (0, expansionService_1.getOpportunities)(limit, offset);
+        res.json({ data: opportunities, total, limit, offset });
+    }
+    catch (err) {
+        console.error('[opportunities] error:', err?.message, err?.stack?.split('\n')[1]);
+        res.status(500).json({ error: 'Erro ao calcular oportunidades', detail: err?.message });
+    }
 });
 // GET /insights/client/:cnpj
 router.get('/client/:cnpj', async (req, res) => {
