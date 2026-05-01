@@ -1,7 +1,11 @@
 import { PrismaClient, Role } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
-const prisma = new PrismaClient()
+// Use direct URL (bypasses pgBouncer) to avoid prepared statement conflicts during seed
+const directUrl = process.env.APP_DATABASE_DIRECT_URL ?? process.env.APP_DATABASE_URL
+const prisma = new PrismaClient({
+  datasources: { db: { url: directUrl } },
+})
 
 async function main() {
   const passwordHash = await bcrypt.hash('081900@Joao', 12)
