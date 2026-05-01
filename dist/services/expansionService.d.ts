@@ -43,16 +43,9 @@ export declare function getClientExpansionDetail(cnpj: string): Promise<{
         avgRevenue: number;
     }[];
     monthlyHistory: {
-        id: number;
         year: number;
-        clientCnpj: string;
-        clientGrouped: string;
         month: number;
         billing: number;
-        deliveriesCount: number;
-        volumesCount: number;
-        totalWeightKg: number;
-        syncedAt: Date;
     }[];
 }>;
 export declare function calcNrr(cnpj: string): Promise<number | null>;

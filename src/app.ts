@@ -28,7 +28,28 @@ app.use(express.urlencoded({ extended: true }))
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', version: '1.0.2', timestamp: new Date().toISOString() })
+  res.json({ status: 'ok', version: '1.0.3', timestamp: new Date().toISOString() })
+})
+
+app.get('/diag', async (_req, res) => {
+  const { prisma } = await import('./db/prisma')
+  const results: Record<string, string> = {}
+  const tests: [string, () => Promise<unknown>][] = [
+    ['user.count', () => prisma.user.count()],
+    ['kanbanCard.count', () => prisma.kanbanCard.count()],
+    ['biClient.count', () => prisma.biClient.count()],
+    ['biClientMonthly.count', () => prisma.biClientMonthly.count()],
+    ['expansionGoal.count', () => prisma.expansionGoal.count()],
+  ]
+  for (const [name, fn] of tests) {
+    try {
+      const r = await fn()
+      results[name] = String(r)
+    } catch (e: any) {
+      results[name] = 'ERROR: ' + e?.message?.substring(0, 100)
+    }
+  }
+  res.json(results)
 })
 
 app.get('/docs/openapi.json', (_req, res) => {

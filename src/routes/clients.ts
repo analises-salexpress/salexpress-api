@@ -11,16 +11,20 @@ router.get('/', async (req, res) => {
   const limit  = Math.min(Number(req.query.limit  ?? 50), 200)
   const offset = Number(req.query.offset ?? 0)
 
-  const { clients, total } = await getClients({
-    search:  req.query.search  as string | undefined,
-    state:   req.query.state   as string | undefined,
-    segment: req.query.segment as string | undefined,
-    curve:   req.query.curve   as string | undefined,
-    limit,
-    offset,
-  })
-
-  res.json({ data: clients, total, limit, offset })
+  try {
+    const { clients, total } = await getClients({
+      search:  req.query.search  as string | undefined,
+      state:   req.query.state   as string | undefined,
+      segment: req.query.segment as string | undefined,
+      curve:   req.query.curve   as string | undefined,
+      limit,
+      offset,
+    })
+    res.json({ data: clients, total, limit, offset })
+  } catch (err: any) {
+    console.error('[clients] error:', err?.message)
+    res.status(500).json({ error: 'Erro ao buscar clientes', detail: err?.message })
+  }
 })
 
 // GET /clients/:cnpj

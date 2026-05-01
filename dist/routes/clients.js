@@ -9,15 +9,21 @@ router.use(auth_1.authenticate);
 router.get('/', async (req, res) => {
     const limit = Math.min(Number(req.query.limit ?? 50), 200);
     const offset = Number(req.query.offset ?? 0);
-    const { clients, total } = await (0, analyticsService_1.getClients)({
-        search: req.query.search,
-        state: req.query.state,
-        segment: req.query.segment,
-        curve: req.query.curve,
-        limit,
-        offset,
-    });
-    res.json({ data: clients, total, limit, offset });
+    try {
+        const { clients, total } = await (0, analyticsService_1.getClients)({
+            search: req.query.search,
+            state: req.query.state,
+            segment: req.query.segment,
+            curve: req.query.curve,
+            limit,
+            offset,
+        });
+        res.json({ data: clients, total, limit, offset });
+    }
+    catch (err) {
+        console.error('[clients] error:', err?.message);
+        res.status(500).json({ error: 'Erro ao buscar clientes', detail: err?.message });
+    }
 });
 // GET /clients/:cnpj
 router.get('/:cnpj', async (req, res) => {
