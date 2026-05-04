@@ -204,13 +204,13 @@ model BiClientMonthly {
 
 model BiClientRoute {
   id           Int      @id @default(autoincrement())
-  clientCnpj   String
+  clientCnpj   String   @map("client_cnpj")
   region       String
-  firstSeen    DateTime
-  lastSeen     DateTime
-  tripCount    Int      @default(1)
-  totalRevenue Float    @default(0)
-  syncedAt     DateTime @default(now())
+  firstSeen    DateTime @map("first_seen")
+  lastSeen     DateTime @map("last_seen")
+  tripCount    Int      @default(1) @map("trip_count")
+  totalRevenue Float    @default(0) @map("total_revenue")
+  syncedAt     DateTime @default(now()) @map("synced_at")
 
   @@unique([clientCnpj, region])
   @@index([clientCnpj])
@@ -220,10 +220,10 @@ model BiClientRoute {
 model BiAllRoute {
   id          Int      @id @default(autoincrement())
   region      String   @unique
-  avgRevenue  Float    @default(0)
-  tripCount   Int      @default(0)
-  clientCount Int      @default(0)
-  syncedAt    DateTime @default(now())
+  avgRevenue  Float    @default(0) @map("avg_revenue")
+  tripCount   Int      @default(0) @map("trip_count")
+  clientCount Int      @default(0) @map("client_count")
+  syncedAt    DateTime @default(now()) @map("synced_at")
 
   @@map("bi_all_routes")
 }
