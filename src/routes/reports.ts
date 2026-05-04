@@ -126,10 +126,10 @@ router.get('/opportunities/export', requireRole(Role.MANAGER), async (_req, res)
       curve:                   o.curve ?? '—',
       baselineBilling:         o.baselineBilling,
       currentBilling:          o.currentBilling,
-      uncoveredRoutesCount:    o.uncoveredRoutesCount,
-      uncoveredRevenueEstimate: o.uncoveredRevenueEstimate,
-      declineGap:              o.declineGap,
-      totalScore:              o.totalScore,
+      uncoveredRoutesCount:        o.uncoveredRoutesCount,
+      partiallyCoveredRoutesCount: o.partiallyCoveredRoutesCount,
+      potencialExpansao:           o.uncoveredRevenueEstimate,
+      totalScore:                  o.totalScore,
       hasKanbanCard:           o.hasKanbanCard ? 'Sim' : 'Não',
     })
   })

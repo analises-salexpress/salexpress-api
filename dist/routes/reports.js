@@ -115,8 +115,8 @@ router.get('/opportunities/export', (0, roles_1.requireRole)(client_1.Role.MANAG
             baselineBilling: o.baselineBilling,
             currentBilling: o.currentBilling,
             uncoveredRoutesCount: o.uncoveredRoutesCount,
-            uncoveredRevenueEstimate: o.uncoveredRevenueEstimate,
-            declineGap: o.declineGap,
+            partiallyCoveredRoutesCount: o.partiallyCoveredRoutesCount,
+            potencialExpansao: o.uncoveredRevenueEstimate,
             totalScore: o.totalScore,
             hasKanbanCard: o.hasKanbanCard ? 'Sim' : 'Não',
         });

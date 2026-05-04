@@ -3,7 +3,9 @@ import { prisma } from '../db/prisma'
 
 const BASELINE_MONTHS = 3
 const DECLINE_THRESHOLD = 0.10
-const PARTIAL_COVERAGE_THRESHOLD = 0.03  // < 3% of total = partially covered
+const PARTIAL_COVERAGE_THRESHOLD = 0.03  // < 3% of total billing = partially covered
+const UNCOVERED_RAMP = 0.30              // 30% ramp-up for a new region
+const PARTIAL_RAMP   = 0.15             // 15% ramp-up for a partially covered region
 
 export interface OpportunityScore {
   cnpj: string
@@ -18,7 +20,6 @@ export interface OpportunityScore {
   uncoveredRoutesCount: number
   partiallyCoveredRoutesCount: number
   uncoveredRevenueEstimate: number
-  declineGap: number
   totalScore: number
   hasKanbanCard: boolean
 }
@@ -40,6 +41,16 @@ function lastCompletedMonth(months: { year: number; month: number; billing: numb
     (m) => m.year < now.getFullYear() || (m.year === now.getFullYear() && m.month < now.getMonth() + 1),
   )
   return completed.at(-1)?.billing ?? 0
+}
+
+// Builds a map of region → weight (0–1) based on avg_revenue relative to all regions
+function buildRegionWeights(allRoutes: { region: string; avgRevenue: number }[]): Map<string, number> {
+  const total = allRoutes.reduce((sum, r) => sum + r.avgRevenue, 0)
+  const map = new Map<string, number>()
+  for (const r of allRoutes) {
+    map.set(r.region, total > 0 ? r.avgRevenue / total : 1 / allRoutes.length)
+  }
+  return map
 }
 
 export async function getOpportunities(limit = 50, offset = 0): Promise<{
@@ -69,6 +80,7 @@ export async function getOpportunities(limit = 50, offset = 0): Promise<{
   ])
 
   const cardCnpjs = new Set(existingCards.map((c) => c.clientId))
+  const regionWeights = buildRegionWeights(allRoutes)
 
   const monthlyByCnpj = new Map<string, { year: number; month: number; billing: number }[]>()
   for (const row of allMonthly) {
@@ -77,7 +89,6 @@ export async function getOpportunities(limit = 50, offset = 0): Promise<{
     monthlyByCnpj.set(row.clientCnpj, list)
   }
 
-  // Group client routes by cnpj: region → totalRevenue
   const routesByCnpj = new Map<string, Map<string, number>>()
   for (const r of allClientRoutes) {
     const map = routesByCnpj.get(r.clientCnpj) ?? new Map()
@@ -96,46 +107,42 @@ export async function getOpportunities(limit = 50, offset = 0): Promise<{
     const totalClientRevenue = months.reduce((sum, m) => sum + m.billing, 0)
     const clientRouteMap = routesByCnpj.get(client.cnpj) ?? new Map()
 
-    const uncoveredRoutes: typeof allRoutes = []
-    const partiallyCoveredRoutes: typeof allRoutes = []
+    let uncoveredCount = 0
+    let partialCount = 0
+    let expansionPotential = 0
 
     for (const route of allRoutes) {
+      const weight = regionWeights.get(route.region) ?? 0
       const routeRevenue = clientRouteMap.get(route.region)
+
       if (routeRevenue === undefined) {
-        uncoveredRoutes.push(route)
+        // Never sent to this region
+        uncoveredCount++
+        expansionPotential += baselineBilling * weight * UNCOVERED_RAMP
       } else if (totalClientRevenue > 0 && routeRevenue / totalClientRevenue < PARTIAL_COVERAGE_THRESHOLD) {
-        partiallyCoveredRoutes.push(route)
+        // Sends there but < 3% of total — room to grow
+        partialCount++
+        expansionPotential += baselineBilling * weight * PARTIAL_RAMP
       }
     }
 
-    const uncoveredRevenueEstimate =
-      uncoveredRoutes.reduce((sum, r) => sum + r.avgRevenue, 0) +
-      partiallyCoveredRoutes.reduce((sum, r) => sum + r.avgRevenue * 0.5, 0)
-
-    let declineGap = 0
-    if (baselineBilling > 0 && currentBilling < baselineBilling) {
-      const dropRatio = (baselineBilling - currentBilling) / baselineBilling
-      if (dropRatio > DECLINE_THRESHOLD) declineGap = baselineBilling - currentBilling
-    }
-
-    const totalScore = uncoveredRevenueEstimate + declineGap
+    if (expansionPotential === 0) continue
 
     scored.push({
-      cnpj:                       client.cnpj,
-      clientName:                 client.name,
-      groupedName:                client.groupedName,
-      city:                       client.city,
-      state:                      client.state,
-      segment:                    client.segment,
-      curve:                      client.curve,
-      baselineBilling:            Math.round(baselineBilling * 100) / 100,
-      currentBilling:             Math.round(currentBilling * 100) / 100,
-      uncoveredRoutesCount:       uncoveredRoutes.length,
-      partiallyCoveredRoutesCount: partiallyCoveredRoutes.length,
-      uncoveredRevenueEstimate:   Math.round(uncoveredRevenueEstimate * 100) / 100,
-      declineGap:                 Math.round(declineGap * 100) / 100,
-      totalScore:                 Math.round(totalScore * 100) / 100,
-      hasKanbanCard:              cardCnpjs.has(client.cnpj),
+      cnpj:                        client.cnpj,
+      clientName:                  client.name,
+      groupedName:                 client.groupedName,
+      city:                        client.city,
+      state:                       client.state,
+      segment:                     client.segment,
+      curve:                       client.curve,
+      baselineBilling:             Math.round(baselineBilling * 100) / 100,
+      currentBilling:              Math.round(currentBilling * 100) / 100,
+      uncoveredRoutesCount:        uncoveredCount,
+      partiallyCoveredRoutesCount: partialCount,
+      uncoveredRevenueEstimate:    Math.round(expansionPotential * 100) / 100,
+      totalScore:                  Math.round(expansionPotential * 100) / 100,
+      hasKanbanCard:               cardCnpjs.has(client.cnpj),
     })
   }
 
@@ -159,26 +166,44 @@ export async function getClientExpansionDetail(cnpj: string) {
   ])
 
   const totalClientRevenue = clientRoutes.reduce((sum, r) => sum + r.totalRevenue, 0)
-
-  const coveredRoutes: { region: string; tripCount: number; totalRevenue: number; revenueShare: number }[] = []
-  const partiallyCoveredRoutes: { region: string; tripCount: number; totalRevenue: number; revenueShare: number; avgRevenue: number }[] = []
-  const uncoveredRoutes: { region: string; avgRevenue: number }[] = []
+  const regionWeights = buildRegionWeights(allRoutes)
+  const months = recentMonths.map((m) => ({ year: m.year, month: m.month, billing: m.billing }))
+  const baseline = calcBaseline(months)
+  const current = lastCompletedMonth(months)
 
   const clientRouteMap = new Map(clientRoutes.map((r) => [r.region, r]))
 
+  const coveredRoutes: {
+    region: string; tripCount: number; totalRevenue: number; revenueShare: number
+  }[] = []
+  const partiallyCoveredRoutes: {
+    region: string; tripCount: number; totalRevenue: number; revenueShare: number; expansionPotential: number
+  }[] = []
+  const uncoveredRoutes: {
+    region: string; expansionPotential: number
+  }[] = []
+
+  let expansionPotential = 0
+
   for (const route of allRoutes) {
+    const weight = regionWeights.get(route.region) ?? 0
     const cr = clientRouteMap.get(route.region)
+
     if (!cr) {
-      uncoveredRoutes.push({ region: route.region, avgRevenue: route.avgRevenue })
+      const potential = Math.round(baseline * weight * UNCOVERED_RAMP * 100) / 100
+      expansionPotential += potential
+      uncoveredRoutes.push({ region: route.region, expansionPotential: potential })
     } else {
       const revenueShare = totalClientRevenue > 0 ? cr.totalRevenue / totalClientRevenue : 0
       if (revenueShare < PARTIAL_COVERAGE_THRESHOLD) {
+        const potential = Math.round(baseline * weight * PARTIAL_RAMP * 100) / 100
+        expansionPotential += potential
         partiallyCoveredRoutes.push({
-          region:       cr.region,
-          tripCount:    cr.tripCount,
-          totalRevenue: cr.totalRevenue,
-          revenueShare: Math.round(revenueShare * 10000) / 100,
-          avgRevenue:   route.avgRevenue,
+          region:             cr.region,
+          tripCount:          cr.tripCount,
+          totalRevenue:       cr.totalRevenue,
+          revenueShare:       Math.round(revenueShare * 10000) / 100,
+          expansionPotential: potential,
         })
       } else {
         coveredRoutes.push({
@@ -191,31 +216,23 @@ export async function getClientExpansionDetail(cnpj: string) {
     }
   }
 
-  const months = recentMonths.map((m) => ({ year: m.year, month: m.month, billing: m.billing }))
-  const baseline = calcBaseline(months)
-  const current = lastCompletedMonth(months)
-
   let declineGap = 0
   if (baseline > 0 && current < baseline) {
     const dropRatio = (baseline - current) / baseline
     if (dropRatio > DECLINE_THRESHOLD) declineGap = baseline - current
   }
 
-  const uncoveredRevenueEstimate =
-    uncoveredRoutes.reduce((sum, r) => sum + r.avgRevenue, 0) +
-    partiallyCoveredRoutes.reduce((sum, r) => sum + r.avgRevenue * 0.5, 0)
-
   return {
-    baseline:                   Math.round(baseline * 100) / 100,
-    currentBilling:             Math.round(current * 100) / 100,
-    declineGap:                 Math.round(declineGap * 100) / 100,
-    uncoveredRoutesCount:       uncoveredRoutes.length,
+    baseline:                    Math.round(baseline * 100) / 100,
+    currentBilling:              Math.round(current * 100) / 100,
+    declineGap:                  Math.round(declineGap * 100) / 100,
+    uncoveredRoutesCount:        uncoveredRoutes.length,
     partiallyCoveredRoutesCount: partiallyCoveredRoutes.length,
-    uncoveredRevenueEstimate:   Math.round(uncoveredRevenueEstimate * 100) / 100,
-    coveredRoutes,
-    partiallyCoveredRoutes,
-    uncoveredRoutes,
-    monthlyHistory:             months,
+    expansionPotential:          Math.round(expansionPotential * 100) / 100,
+    coveredRoutes:               coveredRoutes.sort((a, b) => b.revenueShare - a.revenueShare),
+    partiallyCoveredRoutes:      partiallyCoveredRoutes.sort((a, b) => b.expansionPotential - a.expansionPotential),
+    uncoveredRoutes:             uncoveredRoutes.sort((a, b) => b.expansionPotential - a.expansionPotential),
+    monthlyHistory:              months,
   }
 }
 
