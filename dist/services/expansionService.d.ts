@@ -25,21 +25,12 @@ export declare function getClientExpansionDetail(cnpj: string): Promise<{
     uncoveredRoutesCount: number;
     uncoveredRevenueEstimate: number;
     coveredRoutes: {
-        id: number;
-        clientCnpj: string;
-        syncedAt: Date;
-        deliveryCity: string;
-        deliveryState: string;
-        firstSeen: Date;
-        lastSeen: Date;
+        region: string;
         tripCount: number;
+        totalRevenue: number;
     }[];
     uncoveredRoutes: {
-        id: number;
-        syncedAt: Date;
-        deliveryCity: string;
-        deliveryState: string;
-        tripCount: number;
+        region: string;
         avgRevenue: number;
     }[];
     monthlyHistory: {

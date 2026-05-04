@@ -26,27 +26,27 @@ export declare function getClientRoutes(clientCnpj: string): Promise<{
     id: number;
     clientCnpj: string;
     syncedAt: Date;
-    deliveryCity: string;
-    deliveryState: string;
+    region: string;
     firstSeen: Date;
     lastSeen: Date;
     tripCount: number;
+    totalRevenue: number;
 }[]>;
 export declare function getAllRoutes(): Promise<{
     id: number;
     syncedAt: Date;
-    deliveryCity: string;
-    deliveryState: string;
+    region: string;
     tripCount: number;
     avgRevenue: number;
+    clientCount: number;
 }[]>;
 export declare function getUncoveredRoutes(clientCnpj: string): Promise<{
     id: number;
     syncedAt: Date;
-    deliveryCity: string;
-    deliveryState: string;
+    region: string;
     tripCount: number;
     avgRevenue: number;
+    clientCount: number;
 }[]>;
 export declare function getClients(opts: {
     search?: string;

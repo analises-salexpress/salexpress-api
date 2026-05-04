@@ -57,31 +57,32 @@ export const QUERY_CLIENT_MONTHLY = `
   ORDER BY fn.cnpj_remetente, year, month
 `
 
+// Routes by mesoregion — uses praca_destino joined to dim_bases to get regiao_resumida
 export const QUERY_CLIENT_ROUTES = `
   SELECT
-    fn.cnpj_remetente     AS clientCnpj,
-    fn.cidade_entrega     AS deliveryCity,
-    fn.uf_entrega         AS deliveryState,
-    MIN(fn.data_emissao)  AS firstSeen,
-    MAX(fn.data_emissao)  AS lastSeen,
-    COUNT(DISTINCT fn.ctrc) AS tripCount
+    fn.cnpj_remetente          AS clientCnpj,
+    db.regiao_resumida         AS region,
+    MIN(fn.data_emissao)       AS firstSeen,
+    MAX(fn.data_emissao)       AS lastSeen,
+    COUNT(DISTINCT fn.ctrc)    AS tripCount,
+    SUM(fn.valor_frete)        AS totalRevenue
   FROM bexsal_dw.fato_notas fn
+  JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
   WHERE ${BASE_FATO_FILTERS('fn')}
-    AND fn.cidade_entrega IS NOT NULL
-    AND fn.uf_entrega IS NOT NULL
-  GROUP BY fn.cnpj_remetente, fn.cidade_entrega, fn.uf_entrega
+    AND db.regiao_resumida IS NOT NULL
+  GROUP BY fn.cnpj_remetente, db.regiao_resumida
 `
 
+// All mesoregions the Sal Express serves, with revenue benchmarks
 export const QUERY_ALL_ROUTES = `
   SELECT
-    fn.cidade_entrega     AS deliveryCity,
-    fn.uf_entrega         AS deliveryState,
-    AVG(fn.valor_frete)   AS avgRevenue,
-    COUNT(DISTINCT fn.ctrc) AS tripCount
+    db.regiao_resumida         AS region,
+    AVG(fn.valor_frete)        AS avgRevenue,
+    COUNT(DISTINCT fn.ctrc)    AS tripCount,
+    COUNT(DISTINCT fn.cnpj_remetente) AS clientCount
   FROM bexsal_dw.fato_notas fn
+  JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
   WHERE ${BASE_FATO_FILTERS('fn')}
-    AND fn.cidade_entrega IS NOT NULL
-    AND fn.uf_entrega IS NOT NULL
-  GROUP BY fn.cidade_entrega, fn.uf_entrega
-  HAVING COUNT(DISTINCT fn.ctrc) >= 3
+    AND db.regiao_resumida IS NOT NULL
+  GROUP BY db.regiao_resumida
 `

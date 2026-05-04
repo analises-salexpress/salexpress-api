@@ -27,7 +27,6 @@ async function getOpportunities(limit = 50, offset = 0) {
         ? now.getFullYear()
         : now.getFullYear() - 1;
     const cutoffMonth = ((now.getMonth() - (BASELINE_MONTHS + 2) + 12) % 12) + 1;
-    // Fetch everything in parallel — no N+1
     const [{ clients }, allMonthly, allClientRoutes, allRoutes, existingCards] = await Promise.all([
         (0, analyticsService_1.getClients)({ limit: 5000 }),
         prisma_1.prisma.biClientMonthly.findMany({
@@ -39,26 +38,24 @@ async function getOpportunities(limit = 50, offset = 0) {
             },
             orderBy: [{ year: 'asc' }, { month: 'asc' }],
         }),
-        prisma_1.prisma.biClientRoute.findMany(),
-        (0, analyticsService_1.getAllRoutes)(),
+        prisma_1.prisma.biClientRoute.findMany({ select: { clientCnpj: true, region: true } }),
+        prisma_1.prisma.biAllRoute.findMany(),
         prisma_1.prisma.kanbanCard.findMany({ select: { clientId: true } }),
     ]);
     const cardCnpjs = new Set(existingCards.map((c) => c.clientId));
-    // Group monthly by cnpj
     const monthlyByCnpj = new Map();
     for (const row of allMonthly) {
         const list = monthlyByCnpj.get(row.clientCnpj) ?? [];
         list.push({ year: row.year, month: row.month, billing: row.billing });
         monthlyByCnpj.set(row.clientCnpj, list);
     }
-    // Group client routes by cnpj
     const routesByCnpj = new Map();
     for (const r of allClientRoutes) {
         const set = routesByCnpj.get(r.clientCnpj) ?? new Set();
-        set.add(`${r.deliveryCity}|${r.deliveryState}`);
+        set.add(r.region);
         routesByCnpj.set(r.clientCnpj, set);
     }
-    const allRouteRevMap = new Map(allRoutes.map((r) => [`${r.deliveryCity}|${r.deliveryState}`, r.avgRevenue]));
+    const allRegionRevMap = new Map(allRoutes.map((r) => [r.region, r.avgRevenue]));
     const scored = [];
     for (const client of clients) {
         const months = monthlyByCnpj.get(client.cnpj) ?? [];
@@ -66,8 +63,8 @@ async function getOpportunities(limit = 50, offset = 0) {
         if (baselineBilling === 0)
             continue;
         const currentBilling = lastCompletedMonth(months);
-        const usedRoutes = routesByCnpj.get(client.cnpj) ?? new Set();
-        const uncoveredRoutes = allRoutes.filter((r) => !usedRoutes.has(`${r.deliveryCity}|${r.deliveryState}`));
+        const usedRegions = routesByCnpj.get(client.cnpj) ?? new Set();
+        const uncoveredRoutes = allRoutes.filter((r) => !usedRegions.has(r.region));
         const uncoveredRevenueEstimate = uncoveredRoutes.reduce((sum, r) => sum + r.avgRevenue, 0);
         let declineGap = 0;
         if (baselineBilling > 0 && currentBilling < baselineBilling) {
@@ -100,22 +97,17 @@ async function getOpportunities(limit = 50, offset = 0) {
     };
 }
 async function getClientExpansionDetail(cnpj) {
-    const [recentMonths, uncoveredRoutes, clientRoutes] = await Promise.all([
+    const [recentMonths, clientRoutes, allRoutes] = await Promise.all([
         prisma_1.prisma.biClientMonthly.findMany({
             where: { clientCnpj: cnpj },
             orderBy: [{ year: 'asc' }, { month: 'asc' }],
             take: 12,
         }),
-        (async () => {
-            const [clientRouteList, allRoutes] = await Promise.all([
-                (0, analyticsService_1.getClientRoutes)(cnpj),
-                (0, analyticsService_1.getAllRoutes)(),
-            ]);
-            const usedKeys = new Set(clientRouteList.map((r) => `${r.deliveryCity}|${r.deliveryState}`));
-            return allRoutes.filter((r) => !usedKeys.has(`${r.deliveryCity}|${r.deliveryState}`));
-        })(),
-        (0, analyticsService_1.getClientRoutes)(cnpj),
+        prisma_1.prisma.biClientRoute.findMany({ where: { clientCnpj: cnpj } }),
+        prisma_1.prisma.biAllRoute.findMany(),
     ]);
+    const usedRegions = new Set(clientRoutes.map((r) => r.region));
+    const uncoveredRoutes = allRoutes.filter((r) => !usedRegions.has(r.region));
     const months = recentMonths.map((m) => ({ year: m.year, month: m.month, billing: m.billing }));
     const baseline = calcBaseline(months);
     const current = lastCompletedMonth(months);
@@ -132,8 +124,8 @@ async function getClientExpansionDetail(cnpj) {
         declineGap: Math.round(declineGap * 100) / 100,
         uncoveredRoutesCount: uncoveredRoutes.length,
         uncoveredRevenueEstimate: Math.round(uncoveredRevenueEstimate * 100) / 100,
-        coveredRoutes: clientRoutes,
-        uncoveredRoutes,
+        coveredRoutes: clientRoutes.map((r) => ({ region: r.region, tripCount: r.tripCount, totalRevenue: r.totalRevenue })),
+        uncoveredRoutes: uncoveredRoutes.map((r) => ({ region: r.region, avgRevenue: r.avgRevenue })),
         monthlyHistory: months,
     };
 }

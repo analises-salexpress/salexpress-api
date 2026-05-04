@@ -52,8 +52,8 @@ async function getUncoveredRoutes(clientCnpj) {
         getClientRoutes(clientCnpj),
         getAllRoutes(),
     ]);
-    const usedKeys = new Set(clientRoutes.map((r) => `${r.deliveryCity}|${r.deliveryState}`));
-    return allRoutes.filter((r) => !usedKeys.has(`${r.deliveryCity}|${r.deliveryState}`));
+    const usedRegions = new Set(clientRoutes.map((r) => r.region));
+    return allRoutes.filter((r) => !usedRegions.has(r.region));
 }
 // Returns all active clients from the BI cache, optionally filtered
 async function getClients(opts) {
