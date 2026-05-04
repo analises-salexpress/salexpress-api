@@ -10,6 +10,12 @@ const DECLINE_THRESHOLD = 0.10;
 const PARTIAL_COVERAGE_THRESHOLD = 0.03; // < 3% of total billing = partially covered
 const UNCOVERED_RAMP = 0.30; // 30% ramp-up for a new region
 const PARTIAL_RAMP = 0.15; // 15% ramp-up for a partially covered region
+// Regions always excluded from expansion potential (Sal Express doesn't target SP)
+const GLOBALLY_EXCLUDED_REGIONS = new Set(['SÃO PAULO']);
+// For clients whose origin state matches, exclude their home region too
+const STATE_TO_HOME_REGION = {
+    ES: 'ESPIRITO SANTO',
+};
 function calcBaseline(months) {
     const now = new Date();
     const completed = months.filter((m) => m.year < now.getFullYear() ||
@@ -23,6 +29,14 @@ function lastCompletedMonth(months) {
     const now = new Date();
     const completed = months.filter((m) => m.year < now.getFullYear() || (m.year === now.getFullYear() && m.month < now.getMonth() + 1));
     return completed.at(-1)?.billing ?? 0;
+}
+// Returns the set of regions excluded for a given client state
+function excludedRegionsFor(state) {
+    const excluded = new Set(GLOBALLY_EXCLUDED_REGIONS);
+    if (state && STATE_TO_HOME_REGION[state]) {
+        excluded.add(STATE_TO_HOME_REGION[state]);
+    }
+    return excluded;
 }
 // Builds a map of region → weight (0–1) based on avg_revenue relative to all regions
 function buildRegionWeights(allRoutes) {
@@ -77,10 +91,13 @@ async function getOpportunities(limit = 50, offset = 0) {
         const currentBilling = lastCompletedMonth(months);
         const totalClientRevenue = months.reduce((sum, m) => sum + m.billing, 0);
         const clientRouteMap = routesByCnpj.get(client.cnpj) ?? new Map();
+        const excluded = excludedRegionsFor(client.state);
         let uncoveredCount = 0;
         let partialCount = 0;
         let expansionPotential = 0;
         for (const route of allRoutes) {
+            if (excluded.has(route.region))
+                continue;
             const weight = regionWeights.get(route.region) ?? 0;
             const routeRevenue = clientRouteMap.get(route.region);
             if (routeRevenue === undefined) {
@@ -120,7 +137,7 @@ async function getOpportunities(limit = 50, offset = 0) {
     };
 }
 async function getClientExpansionDetail(cnpj) {
-    const [recentMonths, clientRoutes, allRoutes] = await Promise.all([
+    const [recentMonths, clientRoutes, allRoutes, clientRecord] = await Promise.all([
         prisma_1.prisma.biClientMonthly.findMany({
             where: { clientCnpj: cnpj },
             orderBy: [{ year: 'asc' }, { month: 'asc' }],
@@ -128,7 +145,9 @@ async function getClientExpansionDetail(cnpj) {
         }),
         prisma_1.prisma.biClientRoute.findMany({ where: { clientCnpj: cnpj } }),
         prisma_1.prisma.biAllRoute.findMany(),
+        prisma_1.prisma.biClient.findUnique({ where: { cnpj }, select: { state: true } }),
     ]);
+    const excluded = excludedRegionsFor(clientRecord?.state ?? null);
     const totalClientRevenue = clientRoutes.reduce((sum, r) => sum + r.totalRevenue, 0);
     const regionWeights = buildRegionWeights(allRoutes);
     const months = recentMonths.map((m) => ({ year: m.year, month: m.month, billing: m.billing }));
@@ -140,6 +159,8 @@ async function getClientExpansionDetail(cnpj) {
     const uncoveredRoutes = [];
     let expansionPotential = 0;
     for (const route of allRoutes) {
+        if (excluded.has(route.region))
+            continue;
         const weight = regionWeights.get(route.region) ?? 0;
         const cr = clientRouteMap.get(route.region);
         if (!cr) {
