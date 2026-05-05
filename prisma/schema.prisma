@@ -56,15 +56,16 @@ model User {
 }
 
 model KanbanCard {
-  id           String     @id @default(cuid())
-  clientId     String
-  clientName   String
-  status       CardStatus @default(IDENTIFIED)
-  priority     Priority   @default(MEDIUM)
-  assignedToId String?
-  createdById  String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                      String     @id @default(cuid())
+  clientId                String
+  clientName              String
+  status                  CardStatus @default(IDENTIFIED)
+  priority                Priority   @default(MEDIUM)
+  assignedToId            String?
+  createdById             String
+  manualExpansionPotential Float?    @map("manual_expansion_potential")
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
 
   assignedTo User?            @relation("AssignedCards", fields: [assignedToId], references: [id])
   createdBy  User             @relation("CreatedCards", fields: [createdById], references: [id])
@@ -203,14 +204,15 @@ model BiClientMonthly {
 }
 
 model BiClientRoute {
-  id           Int      @id @default(autoincrement())
-  clientCnpj   String   @map("client_cnpj")
-  region       String
-  firstSeen    DateTime @map("first_seen")
-  lastSeen     DateTime @map("last_seen")
-  tripCount    Int      @default(1) @map("trip_count")
-  totalRevenue Float    @default(0) @map("total_revenue")
-  syncedAt     DateTime @default(now()) @map("synced_at")
+  id               Int      @id @default(autoincrement())
+  clientCnpj       String   @map("client_cnpj")
+  region           String
+  firstSeen        DateTime @map("first_seen")
+  lastSeen         DateTime @map("last_seen")
+  tripCount        Int      @default(1) @map("trip_count")
+  totalRevenue     Float    @default(0) @map("total_revenue")
+  recentMonthlyAvg Float    @default(0) @map("recent_monthly_avg")
+  syncedAt         DateTime @default(now()) @map("synced_at")
 
   @@unique([clientCnpj, region])
   @@index([clientCnpj])
@@ -218,12 +220,13 @@ model BiClientRoute {
 }
 
 model BiAllRoute {
-  id          Int      @id @default(autoincrement())
-  region      String   @unique
-  avgRevenue  Float    @default(0) @map("avg_revenue")
-  tripCount   Int      @default(0) @map("trip_count")
-  clientCount Int      @default(0) @map("client_count")
-  syncedAt    DateTime @default(now()) @map("synced_at")
+  id           Int      @id @default(autoincrement())
+  region       String   @unique
+  avgRevenue   Float    @default(0) @map("avg_revenue")
+  tripCount    Int      @default(0) @map("trip_count")
+  totalRevenue Float    @default(0) @map("total_revenue")
+  clientCount  Int      @default(0) @map("client_count")
+  syncedAt     DateTime @default(now()) @map("synced_at")
 
   @@map("bi_all_routes")
 }

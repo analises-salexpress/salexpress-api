@@ -21,6 +21,7 @@ const cardUpdateSchema = zod_1.z.object({
     priority: zod_1.z.nativeEnum(client_1.Priority).optional(),
     assignedToId: zod_1.z.string().nullable().optional(),
     clientName: zod_1.z.string().optional(),
+    manualExpansionPotential: zod_1.z.number().nullable().optional(),
 });
 // GET /kanban/cards?status=CONTACTED&assignedToId=&clientId=&limit=50&offset=0
 router.get('/cards', async (req, res) => {

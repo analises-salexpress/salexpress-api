@@ -89,13 +89,14 @@ async function syncClientRoutes(conn: mysql.Connection) {
   log('Syncing bi_client_routes…')
   const [rows] = await conn.query(QUERY_CLIENT_ROUTES)
   const data = (rows as any[]).map((r) => ({
-    client_cnpj:   r.clientCnpj,
-    region:        r.region,
-    first_seen:    r.firstSeen,
-    last_seen:     r.lastSeen,
-    trip_count:    Number(r.tripCount ?? 1),
-    total_revenue: Number(r.totalRevenue ?? 0),
-    synced_at:     new Date().toISOString(),
+    client_cnpj:        r.clientCnpj,
+    region:             r.region,
+    first_seen:         r.firstSeen,
+    last_seen:          r.lastSeen,
+    trip_count:         Number(r.tripCount ?? 1),
+    total_revenue:      Number(r.totalRevenue ?? 0),
+    recent_monthly_avg: Number(r.recentMonthlyAvg ?? 0),
+    synced_at:          new Date().toISOString(),
   }))
   const n = await upsert('bi_client_routes', data, ['client_cnpj', 'region'])
   log(`  → ${n} client route rows upserted`)
@@ -105,11 +106,12 @@ async function syncAllRoutes(conn: mysql.Connection) {
   log('Syncing bi_all_routes…')
   const [rows] = await conn.query(QUERY_ALL_ROUTES)
   const data = (rows as any[]).map((r) => ({
-    region:       r.region,
-    avg_revenue:  Number(r.avgRevenue ?? 0),
-    trip_count:   Number(r.tripCount ?? 0),
-    client_count: Number(r.clientCount ?? 0),
-    synced_at:    new Date().toISOString(),
+    region:        r.region,
+    avg_revenue:   Number(r.avgRevenue ?? 0),
+    trip_count:    Number(r.tripCount ?? 0),
+    total_revenue: Number(r.totalRevenue ?? 0),
+    client_count:  Number(r.clientCount ?? 0),
+    synced_at:     new Date().toISOString(),
   }))
   const n = await upsert('bi_all_routes', data, ['region'])
   log(`  → ${n} global route rows upserted`)

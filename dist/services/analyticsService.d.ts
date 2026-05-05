@@ -31,12 +31,14 @@ export declare function getClientRoutes(clientCnpj: string): Promise<{
     lastSeen: Date;
     tripCount: number;
     totalRevenue: number;
+    recentMonthlyAvg: number;
 }[]>;
 export declare function getAllRoutes(): Promise<{
     id: number;
     syncedAt: Date;
     region: string;
     tripCount: number;
+    totalRevenue: number;
     avgRevenue: number;
     clientCount: number;
 }[]>;
@@ -45,6 +47,7 @@ export declare function getUncoveredRoutes(clientCnpj: string): Promise<{
     syncedAt: Date;
     region: string;
     tripCount: number;
+    totalRevenue: number;
     avgRevenue: number;
     clientCount: number;
 }[]>;

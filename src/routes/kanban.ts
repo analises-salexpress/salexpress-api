@@ -21,10 +21,11 @@ const cardCreateSchema = z.object({
 })
 
 const cardUpdateSchema = z.object({
-  status:      z.nativeEnum(CardStatus).optional(),
-  priority:    z.nativeEnum(Priority).optional(),
-  assignedToId: z.string().nullable().optional(),
-  clientName:  z.string().optional(),
+  status:                   z.nativeEnum(CardStatus).optional(),
+  priority:                 z.nativeEnum(Priority).optional(),
+  assignedToId:             z.string().nullable().optional(),
+  clientName:               z.string().optional(),
+  manualExpansionPotential: z.number().nullable().optional(),
 })
 
 // GET /kanban/cards?status=CONTACTED&assignedToId=&clientId=&limit=50&offset=0

@@ -1,6 +1,7 @@
 import { EXCLUDED_CNPJS, buildExcludedCnpjsClause } from './constants'
 
 const MONTHS_BACK = 18
+const RECENT_MONTHS = 3
 
 const excludedCnpjsList = EXCLUDED_CNPJS.map((c) => `'${c}'`).join(', ')
 
@@ -13,7 +14,6 @@ const BASE_FATO_FILTERS = (alias = 'fn') => `
   AND ${alias}.data_emissao < CURDATE()
 `
 
-// Only the most recent version of each client from dim_cliente
 export const QUERY_CLIENTS = `
   SELECT
     dc.cnpj,
@@ -42,14 +42,14 @@ export const QUERY_CLIENTS = `
 
 export const QUERY_CLIENT_MONTHLY = `
   SELECT
-    fn.cnpj_remetente         AS clientCnpj,
-    fn.cnpj_remetente         AS clientGrouped,
-    YEAR(fn.data_emissao)     AS year,
-    MONTH(fn.data_emissao)    AS month,
-    SUM(fn.valor_frete)       AS billing,
-    COUNT(fn.ctrc)            AS deliveriesCount,
+    fn.cnpj_remetente          AS clientCnpj,
+    fn.cnpj_remetente          AS clientGrouped,
+    YEAR(fn.data_emissao)      AS year,
+    MONTH(fn.data_emissao)     AS month,
+    SUM(fn.valor_frete)        AS billing,
+    COUNT(fn.ctrc)             AS deliveriesCount,
     SUM(fn.quantidade_volumes) AS volumesCount,
-    SUM(fn.peso_real_kg)      AS totalWeightKg
+    SUM(fn.peso_real_kg)       AS totalWeightKg
   FROM bexsal_dw.fato_notas fn
   WHERE ${BASE_FATO_FILTERS('fn')}
     AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL ${MONTHS_BACK} MONTH)
@@ -57,15 +57,19 @@ export const QUERY_CLIENT_MONTHLY = `
   ORDER BY fn.cnpj_remetente, year, month
 `
 
-// Routes by mesoregion — uses praca_destino joined to dim_bases to get regiao_resumida
+// Routes by mesoregion — total history for coverage detection + last-3-month avg for display
 export const QUERY_CLIENT_ROUTES = `
   SELECT
-    fn.cnpj_remetente          AS clientCnpj,
-    db.regiao_resumida         AS region,
-    MIN(fn.data_emissao)       AS firstSeen,
-    MAX(fn.data_emissao)       AS lastSeen,
-    COUNT(DISTINCT fn.ctrc)    AS tripCount,
-    SUM(fn.valor_frete)        AS totalRevenue
+    fn.cnpj_remetente                                                      AS clientCnpj,
+    db.regiao_resumida                                                     AS region,
+    MIN(fn.data_emissao)                                                   AS firstSeen,
+    MAX(fn.data_emissao)                                                   AS lastSeen,
+    COUNT(DISTINCT fn.ctrc)                                                AS tripCount,
+    SUM(fn.valor_frete)                                                    AS totalRevenue,
+    SUM(CASE
+      WHEN fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL ${RECENT_MONTHS} MONTH)
+      THEN fn.valor_frete ELSE 0
+    END) / ${RECENT_MONTHS}                                                AS recentMonthlyAvg
   FROM bexsal_dw.fato_notas fn
   JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
   WHERE ${BASE_FATO_FILTERS('fn')}
@@ -73,13 +77,14 @@ export const QUERY_CLIENT_ROUTES = `
   GROUP BY fn.cnpj_remetente, db.regiao_resumida
 `
 
-// All mesoregions the Sal Express serves, with revenue benchmarks
+// Company-wide mesoregion stats — avg ticket + total volume = distribution weights
 export const QUERY_ALL_ROUTES = `
   SELECT
-    db.regiao_resumida         AS region,
-    AVG(fn.valor_frete)        AS avgRevenue,
-    COUNT(DISTINCT fn.ctrc)    AS tripCount,
-    COUNT(DISTINCT fn.cnpj_remetente) AS clientCount
+    db.regiao_resumida                        AS region,
+    AVG(fn.valor_frete)                       AS avgRevenue,
+    COUNT(DISTINCT fn.ctrc)                   AS tripCount,
+    SUM(fn.valor_frete)                       AS totalRevenue,
+    COUNT(DISTINCT fn.cnpj_remetente)         AS clientCount
   FROM bexsal_dw.fato_notas fn
   JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
   WHERE ${BASE_FATO_FILTERS('fn')}

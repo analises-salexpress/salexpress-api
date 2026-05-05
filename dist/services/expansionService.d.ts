@@ -13,6 +13,7 @@ export interface OpportunityScore {
     uncoveredRevenueEstimate: number;
     totalScore: number;
     hasKanbanCard: boolean;
+    manualExpansionPotential: number | null;
 }
 export declare function getOpportunities(limit?: number, offset?: number): Promise<{
     opportunities: OpportunityScore[];
@@ -25,16 +26,18 @@ export declare function getClientExpansionDetail(cnpj: string): Promise<{
     uncoveredRoutesCount: number;
     partiallyCoveredRoutesCount: number;
     expansionPotential: number;
+    manualExpansionPotential: number | null;
+    kanbanCardId: string | null;
     coveredRoutes: {
         region: string;
         tripCount: number;
-        totalRevenue: number;
+        recentMonthlyAvg: number;
         revenueShare: number;
     }[];
     partiallyCoveredRoutes: {
         region: string;
         tripCount: number;
-        totalRevenue: number;
+        recentMonthlyAvg: number;
         revenueShare: number;
         expansionPotential: number;
     }[];
