@@ -345,13 +345,28 @@ model HypercareClient {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  enrolledBy  User                  @relation(fields: [enrolledById], references: [id])
-  touchpoints HypercareTouchpoint[]
-  meetings    HypercareMeeting[]
+  enrolledBy      User                    @relation(fields: [enrolledById], references: [id])
+  touchpoints     HypercareTouchpoint[]
+  meetings        HypercareMeeting[]
+  additionalCnpjs HypercareClientCnpj[]
 
   @@index([cnpj])
   @@index([status])
   @@map("hypercare_clients")
+}
+
+model HypercareClientCnpj {
+  id        String   @id @default(cuid())
+  clientId  String
+  cnpj      String
+  name      String
+  createdAt DateTime @default(now())
+
+  client HypercareClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, cnpj])
+  @@index([clientId])
+  @@map("hypercare_client_cnpjs")
 }
 
 model HypercareTouchpoint {
