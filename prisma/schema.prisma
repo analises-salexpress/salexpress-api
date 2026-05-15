@@ -45,15 +45,18 @@ model User {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  assignedCards    KanbanCard[]        @relation("AssignedCards")
-  createdCards     KanbanCard[]     @relation("CreatedCards")
-  activities       KanbanActivity[]
-  notes            KanbanNote[]
-  sentMessages     Message[]        @relation("SentMessages")
-  receivedMessages Message[]        @relation("ReceivedMessages")
-  uploadedFiles    File[]
-  expansionGoals   ExpansionGoal[]
-  refreshTokens    RefreshToken[]
+  assignedCards        KanbanCard[]          @relation("AssignedCards")
+  createdCards         KanbanCard[]          @relation("CreatedCards")
+  activities           KanbanActivity[]
+  notes                KanbanNote[]
+  sentMessages         Message[]             @relation("SentMessages")
+  receivedMessages     Message[]             @relation("ReceivedMessages")
+  uploadedFiles        File[]
+  expansionGoals       ExpansionGoal[]
+  refreshTokens        RefreshToken[]
+  hypercareClients     HypercareClient[]
+  hypercareTouchpoints HypercareTouchpoint[]
+  hypercareMeetings    HypercareMeeting[]
 }
 
 model KanbanCard {
@@ -301,4 +304,103 @@ model BiAllRoute {
   syncedAt     DateTime @default(now()) @map("synced_at")
 
   @@map("bi_all_routes")
+}
+
+// ───── HyperCare ─────────────────────────────────────────────────────────────
+
+enum HypercareStatus {
+  ACTIVE
+  GRADUATED
+  CANCELLED
+}
+
+enum TouchpointType {
+  CALL
+  EMAIL
+  VISIT
+  GGR_MEETING
+  WHATSAPP
+  OTHER
+}
+
+enum TouchpointOutcome {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+enum ActionItemStatus {
+  OPEN
+  DONE
+}
+
+model HypercareClient {
+  id           String          @id @default(cuid())
+  cnpj         String          @unique
+  clientName   String
+  status       HypercareStatus @default(ACTIVE)
+  enrolledAt   DateTime        @default(now())
+  enrolledById String
+  notes        String?         @db.Text
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  enrolledBy  User                  @relation(fields: [enrolledById], references: [id])
+  touchpoints HypercareTouchpoint[]
+  meetings    HypercareMeeting[]
+
+  @@index([cnpj])
+  @@index([status])
+  @@map("hypercare_clients")
+}
+
+model HypercareTouchpoint {
+  id         String            @id @default(cuid())
+  clientId   String
+  userId     String
+  type       TouchpointType
+  summary    String            @db.Text
+  outcome    TouchpointOutcome
+  occurredAt DateTime
+  createdAt  DateTime          @default(now())
+
+  client HypercareClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id])
+
+  @@index([clientId])
+  @@map("hypercare_touchpoints")
+}
+
+model HypercareMeeting {
+  id          String   @id @default(cuid())
+  clientId    String
+  userId      String
+  meetingDate DateTime
+  agenda      String?  @db.Text
+  minutes     String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client      HypercareClient       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user        User                  @relation(fields: [userId], references: [id])
+  actionItems HypercareActionItem[]
+
+  @@index([clientId])
+  @@map("hypercare_meetings")
+}
+
+model HypercareActionItem {
+  id          String           @id @default(cuid())
+  meetingId   String
+  description String           @db.Text
+  responsible String
+  dueDate     DateTime?
+  status      ActionItemStatus @default(OPEN)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  meeting HypercareMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@map("hypercare_action_items")
 }

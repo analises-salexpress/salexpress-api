@@ -13,6 +13,7 @@ import filesRoutes from './routes/files'
 import messagesRoutes from './routes/messages'
 import reportsRoutes from './routes/reports'
 import chatRoutes from './routes/chat'
+import hypercareRoutes from './routes/hypercare'
 
 const app = express()
 
@@ -169,6 +170,7 @@ app.use('/files', filesRoutes)
 app.use('/messages', messagesRoutes)
 app.use('/reports', reportsRoutes)
 app.use('/chat', chatRoutes)
+app.use('/hypercare', hypercareRoutes)
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' })
