@@ -24,7 +24,7 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
     return
   }
 
-  const { clientId, cardId } = req.body
+  const { clientId, cardId, isEvidence } = req.body
   const ext  = req.file.originalname.split('.').pop()
   const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
@@ -47,8 +47,9 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       path:         urlData.publicUrl,
       mimeType:     req.file.mimetype,
       uploadedById: req.user!.userId,
-      clientId:     clientId ?? null,
-      cardId:       cardId   ?? null,
+      clientId:     clientId   ?? null,
+      cardId:       cardId     ?? null,
+      isEvidence:   isEvidence === 'true' || isEvidence === true,
     },
   })
 

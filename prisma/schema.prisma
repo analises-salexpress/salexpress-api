@@ -40,11 +40,12 @@ model User {
   email        String   @unique
   passwordHash String
   role         Role     @default(VENDOR)
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  active              Boolean  @default(true)
+  mustChangePassword  Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  assignedCards    KanbanCard[]     @relation("AssignedCards")
+  assignedCards    KanbanCard[]        @relation("AssignedCards")
   createdCards     KanbanCard[]     @relation("CreatedCards")
   activities       KanbanActivity[]
   notes            KanbanNote[]
@@ -64,19 +65,36 @@ model KanbanCard {
   assignedToId            String?
   createdById             String
   manualExpansionPotential Float?    @map("manual_expansion_potential")
+  expansionForecast        Float?    @map("expansion_forecast")
+  currentCarrier           String?   @map("current_carrier")
   createdAt               DateTime   @default(now())
   updatedAt               DateTime   @updatedAt
 
-  assignedTo User?            @relation("AssignedCards", fields: [assignedToId], references: [id])
-  createdBy  User             @relation("CreatedCards", fields: [createdById], references: [id])
-  activities KanbanActivity[]
-  notes      KanbanNote[]
-  files      File[]
-  goals      ExpansionGoal[]
+  assignedTo      User?                @relation("AssignedCards", fields: [assignedToId], references: [id])
+  createdBy       User                 @relation("CreatedCards", fields: [createdById], references: [id])
+  activities      KanbanActivity[]
+  notes           KanbanNote[]
+  files           File[]
+  goals           ExpansionGoal[]
+  additionalCnpjs CardAdditionalCnpj[]
 
   @@index([clientId])
   @@index([assignedToId])
   @@index([status])
+}
+
+model CardAdditionalCnpj {
+  id        String     @id @default(cuid())
+  cardId    String
+  cnpj      String
+  name      String
+  createdAt DateTime   @default(now())
+
+  card KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, cnpj])
+  @@index([cardId])
+  @@map("card_additional_cnpjs")
 }
 
 model KanbanNote {
@@ -130,6 +148,7 @@ model File {
   uploadedById String
   clientId     String?
   cardId       String?
+  isEvidence   Boolean  @default(false) @map("is_evidence")
   createdAt    DateTime @default(now())
 
   uploadedBy User        @relation(fields: [uploadedById], references: [id])
@@ -151,11 +170,28 @@ model ExpansionGoal {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  vendor User        @relation(fields: [vendorId], references: [id])
-  card   KanbanCard? @relation(fields: [cardId], references: [id])
+  vendor    User                @relation(fields: [vendorId], references: [id])
+  card      KanbanCard?         @relation(fields: [cardId], references: [id])
+  weekNotes ExpansionWeekNote[]
 
   @@index([clientId])
   @@index([vendorId])
+}
+
+model ExpansionWeekNote {
+  id          String   @id @default(cuid())
+  goalId      String
+  year        Int
+  week        Int
+  observation String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  goal ExpansionGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, year, week])
+  @@index([goalId])
+  @@map("expansion_week_notes")
 }
 
 model RefreshToken {
@@ -203,6 +239,20 @@ model BiClientMonthly {
   @@map("bi_client_monthly")
 }
 
+model BiClientWeekly {
+  id              Int      @id @default(autoincrement())
+  clientCnpj      String
+  year            Int
+  week            Int
+  billing         Float    @default(0)
+  deliveriesCount Int      @default(0)
+  syncedAt        DateTime @default(now())
+
+  @@unique([clientCnpj, year, week])
+  @@index([clientCnpj])
+  @@map("bi_client_weekly")
+}
+
 model BiClientRoute {
   id               Int      @id @default(autoincrement())
   clientCnpj       String   @map("client_cnpj")
@@ -217,6 +267,28 @@ model BiClientRoute {
   @@unique([clientCnpj, region])
   @@index([clientCnpj])
   @@map("bi_client_routes")
+}
+
+model OpportunityExclusion {
+  id         Int      @id @default(autoincrement())
+  cnpj       String   @unique
+  excludedBy String
+  excludedAt DateTime @default(now())
+
+  @@map("opportunity_exclusions")
+}
+
+model BiClientDaily {
+  id              Int      @id @default(autoincrement())
+  clientCnpj      String   @map("client_cnpj")
+  date            DateTime @map("date") @db.Date
+  billing         Float    @default(0)
+  deliveriesCount Int      @default(0) @map("deliveries_count")
+  syncedAt        DateTime @default(now()) @map("synced_at")
+
+  @@unique([clientCnpj, date])
+  @@index([clientCnpj])
+  @@map("bi_client_daily")
 }
 
 model BiAllRoute {

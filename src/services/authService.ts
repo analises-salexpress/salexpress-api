@@ -30,6 +30,7 @@ export async function login(email: string, password: string) {
   return {
     accessToken,
     refreshToken,
+    mustChangePassword: user.mustChangePassword,
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
   }
 }

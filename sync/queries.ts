@@ -6,23 +6,33 @@ const RECENT_MONTHS = 3
 const excludedCnpjsList = EXCLUDED_CNPJS.map((c) => `'${c}'`).join(', ')
 
 const BASE_FATO_FILTERS = (alias = 'fn') => `
-  ${alias}.tipo_documento NOT IN ('ANULACAO', 'CORTESIA')
+  ${alias}.tipo_documento IN ('NORMAL', 'SUBC FORM CTRC', 'REDESPACHO')
   AND ${alias}.unidade_emissora != 'MTZ'
   AND ${alias}.login != 'maira'
   AND ${alias}.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
-  AND ${alias}.cnpj_remetente NOT IN (${excludedCnpjsList})
+  AND ${alias}.cnpj_pagador NOT IN (${excludedCnpjsList})
+  AND ${alias}.data_emissao < CURDATE()
+`
+
+// Same as BASE_FATO_FILTERS but without the tipo_documento restriction —
+// used for daily tracking of expanded clients (reentregas, etc. must count)
+const BASE_FATO_FILTERS_ALL = (alias = 'fn') => `
+  ${alias}.unidade_emissora != 'MTZ'
+  AND ${alias}.login != 'maira'
+  AND ${alias}.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
+  AND ${alias}.cnpj_pagador NOT IN (${excludedCnpjsList})
   AND ${alias}.data_emissao < CURDATE()
 `
 
 export const QUERY_CLIENTS = `
   SELECT
     dc.cnpj,
-    dc.nome_cliente          AS name,
-    dc.nome_cliente_agrupado AS groupedName,
-    dc.cidade                AS city,
-    dc.uf                    AS state,
-    dc.segmento              AS segment,
-    dc.curva                 AS curve,
+    dc.nome_cliente                                AS name,
+    dc.nome_cliente_agrupado                       AS groupedName,
+    dc.cidade                                      AS city,
+    dc.uf                                          AS state,
+    COALESCE(seg_esp.segment, seg_dim.tipo, 'Não classificado') AS segment,
+    dc.curva                                                      AS curve,
     dc.tipo
   FROM bexsal_dw.dim_cliente dc
   INNER JOIN (
@@ -30,11 +40,32 @@ export const QUERY_CLIENTS = `
     FROM bexsal_dw.dim_cliente
     GROUP BY cnpj
   ) latest ON dc.cnpj = latest.cnpj AND dc.versao = latest.max_versao
+  LEFT JOIN (
+    SELECT e.cnpj_pagador,
+           REGEXP_REPLACE(e.especie, '^[0-9]+-', '') AS segment
+    FROM (
+      SELECT cnpj_pagador, especie,
+             ROW_NUMBER() OVER (PARTITION BY cnpj_pagador ORDER BY COUNT(*) DESC) AS rn
+      FROM bexsal_dw.fato_notas
+      WHERE tipo_documento IN ('NORMAL', 'SUBC FORM CTRC', 'REDESPACHO')
+        AND data_emissao >= DATE_SUB(CURDATE(), INTERVAL ${MONTHS_BACK} MONTH)
+        AND data_emissao < CURDATE()
+        AND tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
+        AND especie IS NOT NULL AND especie != ''
+        AND CAST(SUBSTRING_INDEX(especie, '-', 1) AS UNSIGNED) BETWEEN 1 AND 21
+      GROUP BY cnpj_pagador, especie
+    ) e
+    WHERE e.rn = 1
+  ) seg_esp ON seg_esp.cnpj_pagador = dc.cnpj
+  LEFT JOIN bexsal_dw.dim_segmentos seg_dim
+    ON dc.segmento REGEXP '^[0-9]+$'
+    AND CAST(dc.segmento AS UNSIGNED) = seg_dim.codigo
   WHERE ${buildExcludedCnpjsClause('dc')}
     AND EXISTS (
       SELECT 1
       FROM bexsal_dw.fato_notas fn
-      WHERE fn.cnpj_remetente = dc.cnpj
+      WHERE fn.cnpj_pagador = dc.cnpj
+        AND fn.tipo_documento IN ('NORMAL', 'SUBC FORM CTRC', 'REDESPACHO')
         AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL ${MONTHS_BACK} MONTH)
         AND fn.data_emissao < CURDATE()
     )
@@ -42,8 +73,8 @@ export const QUERY_CLIENTS = `
 
 export const QUERY_CLIENT_MONTHLY = `
   SELECT
-    fn.cnpj_remetente          AS clientCnpj,
-    fn.cnpj_remetente          AS clientGrouped,
+    fn.cnpj_pagador            AS clientCnpj,
+    fn.cnpj_pagador            AS clientGrouped,
     YEAR(fn.data_emissao)      AS year,
     MONTH(fn.data_emissao)     AS month,
     SUM(fn.valor_frete)        AS billing,
@@ -53,18 +84,21 @@ export const QUERY_CLIENT_MONTHLY = `
   FROM bexsal_dw.fato_notas fn
   WHERE ${BASE_FATO_FILTERS('fn')}
     AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL ${MONTHS_BACK} MONTH)
-  GROUP BY fn.cnpj_remetente, YEAR(fn.data_emissao), MONTH(fn.data_emissao)
-  ORDER BY fn.cnpj_remetente, year, month
+  GROUP BY fn.cnpj_pagador, YEAR(fn.data_emissao), MONTH(fn.data_emissao)
+  ORDER BY fn.cnpj_pagador, year, month
 `
 
 // Routes by mesoregion — total history for coverage detection + last-3-month avg for display
 export const QUERY_CLIENT_ROUTES = `
   SELECT
-    fn.cnpj_remetente                                                      AS clientCnpj,
+    fn.cnpj_pagador                                                        AS clientCnpj,
     db.regiao_resumida                                                     AS region,
     MIN(fn.data_emissao)                                                   AS firstSeen,
     MAX(fn.data_emissao)                                                   AS lastSeen,
-    COUNT(DISTINCT fn.ctrc)                                                AS tripCount,
+    COUNT(DISTINCT CASE
+      WHEN YEAR(fn.data_emissao) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+        AND MONTH(fn.data_emissao) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+      THEN fn.ctrc END)                                                    AS tripCount,
     SUM(fn.valor_frete)                                                    AS totalRevenue,
     SUM(CASE
       WHEN fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL ${RECENT_MONTHS} MONTH)
@@ -74,7 +108,37 @@ export const QUERY_CLIENT_ROUTES = `
   JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
   WHERE ${BASE_FATO_FILTERS('fn')}
     AND db.regiao_resumida IS NOT NULL
-  GROUP BY fn.cnpj_remetente, db.regiao_resumida
+  GROUP BY fn.cnpj_pagador, db.regiao_resumida
+`
+
+// Weekly billing per client — last 10 weeks for sparklines and churn detection
+export const QUERY_CLIENT_WEEKLY = `
+  SELECT
+    fn.cnpj_pagador            AS clientCnpj,
+    YEAR(fn.data_emissao)      AS year,
+    WEEK(fn.data_emissao, 3)   AS week,
+    SUM(fn.valor_frete)        AS billing,
+    COUNT(fn.ctrc)             AS deliveriesCount
+  FROM bexsal_dw.fato_notas fn
+  WHERE ${BASE_FATO_FILTERS('fn')}
+    AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL 10 WEEK)
+  GROUP BY fn.cnpj_pagador, YEAR(fn.data_emissao), WEEK(fn.data_emissao, 3)
+  ORDER BY fn.cnpj_pagador, year, week
+`
+
+// Daily billing per client — last 180 days for day-by-day expansion tracking
+// Uses ALL document types (no tipo_documento filter) so reentregas count after expansion
+export const QUERY_CLIENT_DAILY = `
+  SELECT
+    fn.cnpj_pagador          AS clientCnpj,
+    DATE(fn.data_emissao)    AS date,
+    SUM(fn.valor_frete)      AS billing,
+    COUNT(fn.ctrc)           AS deliveriesCount
+  FROM bexsal_dw.fato_notas fn
+  WHERE ${BASE_FATO_FILTERS_ALL('fn')}
+    AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL 180 DAY)
+  GROUP BY fn.cnpj_pagador, DATE(fn.data_emissao)
+  ORDER BY fn.cnpj_pagador, date
 `
 
 // Company-wide mesoregion stats — avg ticket + total volume = distribution weights
@@ -84,7 +148,7 @@ export const QUERY_ALL_ROUTES = `
     AVG(fn.valor_frete)                       AS avgRevenue,
     COUNT(DISTINCT fn.ctrc)                   AS tripCount,
     SUM(fn.valor_frete)                       AS totalRevenue,
-    COUNT(DISTINCT fn.cnpj_remetente)         AS clientCount
+    COUNT(DISTINCT fn.cnpj_pagador)           AS clientCount
   FROM bexsal_dw.fato_notas fn
   JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
   WHERE ${BASE_FATO_FILTERS('fn')}

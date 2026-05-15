@@ -5,6 +5,8 @@ import {
   QUERY_CLIENTS,
   QUERY_CLIENT_MONTHLY,
   QUERY_CLIENT_ROUTES,
+  QUERY_CLIENT_WEEKLY,
+  QUERY_CLIENT_DAILY,
   QUERY_ALL_ROUTES,
 } from './queries'
 
@@ -102,6 +104,35 @@ async function syncClientRoutes(conn: mysql.Connection) {
   log(`  → ${n} client route rows upserted`)
 }
 
+async function syncClientWeekly(conn: mysql.Connection) {
+  log('Syncing bi_client_weekly…')
+  const [rows] = await conn.query(QUERY_CLIENT_WEEKLY)
+  const data = (rows as any[]).map((r) => ({
+    clientCnpj:      r.clientCnpj,
+    year:            Number(r.year),
+    week:            Number(r.week),
+    billing:         Number(r.billing ?? 0),
+    deliveriesCount: Number(r.deliveriesCount ?? 0),
+    syncedAt:        new Date().toISOString(),
+  }))
+  const n = await upsert('bi_client_weekly', data, ['clientCnpj', 'year', 'week'])
+  log(`  → ${n} weekly rows upserted`)
+}
+
+async function syncClientDaily(conn: mysql.Connection) {
+  log('Syncing bi_client_daily…')
+  const [rows] = await conn.query(QUERY_CLIENT_DAILY)
+  const data = (rows as any[]).map((r) => ({
+    client_cnpj:      r.clientCnpj,
+    date:             r.date,
+    billing:          Number(r.billing ?? 0),
+    deliveries_count: Number(r.deliveriesCount ?? 0),
+    synced_at:        new Date().toISOString(),
+  }))
+  const n = await upsert('bi_client_daily', data, ['client_cnpj', 'date'])
+  log(`  → ${n} daily rows upserted`)
+}
+
 async function syncAllRoutes(conn: mysql.Connection) {
   log('Syncing bi_all_routes…')
   const [rows] = await conn.query(QUERY_ALL_ROUTES)
@@ -115,6 +146,86 @@ async function syncAllRoutes(conn: mysql.Connection) {
   }))
   const n = await upsert('bi_all_routes', data, ['region'])
   log(`  → ${n} global route rows upserted`)
+}
+
+async function cleanOldDaily() {
+  log('Cleaning old daily rows (>180 days)…')
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 180)
+  let total = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('bi_client_daily')
+      .select('id')
+      .lt('date', cutoff.toISOString().split('T')[0])
+      .limit(500)
+    if (error) throw new Error(`fetch old bi_client_daily: ${error.message}`)
+    if (!data || data.length === 0) break
+    const ids = data.map((r: any) => r.id)
+    await supabase.from('bi_client_daily').delete().in('id', ids)
+    total += ids.length
+  }
+  log(`  → ${total} old daily rows removed`)
+}
+
+async function cleanStaleRoutes(syncStart: string) {
+  log('Cleaning stale routes…')
+  let total = 0
+  // Delete client routes not touched in this sync (client stopped sending to that region)
+  while (true) {
+    const { data, error } = await supabase
+      .from('bi_client_routes')
+      .select('client_cnpj, region')
+      .lt('synced_at', syncStart)
+      .limit(500)
+    if (error) throw new Error(`fetch stale bi_client_routes: ${error.message}`)
+    if (!data || data.length === 0) break
+    for (const row of data) {
+      await supabase.from('bi_client_routes').delete()
+        .eq('client_cnpj', row.client_cnpj).eq('region', row.region)
+    }
+    total += data.length
+  }
+  // Delete weekly rows not touched in this sync
+  while (true) {
+    const { data, error } = await supabase
+      .from('bi_client_weekly')
+      .select('id')
+      .lt('syncedAt', syncStart)
+      .limit(500)
+    if (error) throw new Error(`fetch stale bi_client_weekly: ${error.message}`)
+    if (!data || data.length === 0) break
+    const ids = data.map((r: any) => r.id)
+    await supabase.from('bi_client_weekly').delete().in('id', ids)
+    total += ids.length
+  }
+  log(`  → ${total} stale route/weekly rows removed`)
+}
+
+async function cleanStaleClients(syncStart: string) {
+  log('Cleaning stale clients…')
+  let totalRemoved = 0
+  while (true) {
+    const { data: staleRows, error } = await supabase
+      .from('bi_clients')
+      .select('cnpj')
+      .lt('syncedAt', syncStart)
+      .limit(500)
+    if (error) throw new Error(`fetch stale bi_clients: ${error.message}`)
+
+    const stale = (staleRows ?? []).map((r) => r.cnpj)
+    if (stale.length === 0) break
+
+    const CHUNK = 200
+    for (let i = 0; i < stale.length; i += CHUNK) {
+      const chunk = stale.slice(i, i + CHUNK)
+      await supabase.from('bi_client_routes').delete().in('client_cnpj', chunk)
+      await supabase.from('bi_client_monthly').delete().in('clientCnpj', chunk)
+      await supabase.from('bi_clients').delete().in('cnpj', chunk)
+    }
+    totalRemoved += stale.length
+  }
+  log(`  → ${totalRemoved} stale clients removed`)
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -138,10 +249,17 @@ async function main() {
     conn = await getConnection()
     log('MySQL connected')
 
+    const syncStart = new Date().toISOString()
+
     await syncClients(conn)
     await syncClientMonthly(conn)
     await syncClientRoutes(conn)
+    await syncClientWeekly(conn)
+    await syncClientDaily(conn)
     await syncAllRoutes(conn)
+    await cleanOldDaily()
+    await cleanStaleRoutes(syncStart)
+    await cleanStaleClients(syncStart)
 
     log('=== Sync complete ===')
   } catch (err) {

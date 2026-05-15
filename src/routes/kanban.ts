@@ -5,6 +5,7 @@ import { requireRole } from '../middleware/roles'
 import { prisma } from '../db/prisma'
 import { AuthenticatedRequest } from '../types'
 import { CardStatus, Priority, Role } from '@prisma/client'
+import { aggregateRecentBilling } from '../services/analyticsService'
 
 const router = Router()
 
@@ -13,11 +14,13 @@ router.use(authenticate)
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
 const cardCreateSchema = z.object({
-  clientId:    z.string().min(1),
-  clientName:  z.string().min(1),
-  status:      z.nativeEnum(CardStatus).optional(),
-  priority:    z.nativeEnum(Priority).optional(),
-  assignedToId: z.string().optional(),
+  clientId:                 z.string().min(1),
+  clientName:               z.string().min(1),
+  status:                   z.nativeEnum(CardStatus).optional(),
+  priority:                 z.nativeEnum(Priority).optional(),
+  assignedToId:             z.string().optional(),
+  manualExpansionPotential: z.number().nullable().optional(),
+  expansionForecast:        z.number().nullable().optional(),
 })
 
 const cardUpdateSchema = z.object({
@@ -26,6 +29,8 @@ const cardUpdateSchema = z.object({
   assignedToId:             z.string().nullable().optional(),
   clientName:               z.string().optional(),
   manualExpansionPotential: z.number().nullable().optional(),
+  expansionForecast:        z.number().nullable().optional(),
+  currentCarrier:           z.string().nullable().optional(),
 })
 
 // GET /kanban/cards?status=CONTACTED&assignedToId=&clientId=&limit=50&offset=0
@@ -53,8 +58,9 @@ router.get('/cards', async (req: AuthenticatedRequest, res) => {
       skip: offset,
       orderBy: { updatedAt: 'desc' },
       include: {
-        assignedTo: { select: { id: true, name: true, email: true } },
-        createdBy:  { select: { id: true, name: true } },
+        assignedTo:     { select: { id: true, name: true, email: true } },
+        createdBy:      { select: { id: true, name: true } },
+        additionalCnpjs: { select: { id: true, cnpj: true, name: true } },
         _count: { select: { notes: true, files: true } },
       },
     }),
@@ -116,6 +122,21 @@ router.put('/cards/:id', async (req: AuthenticatedRequest, res) => {
     return
   }
 
+  // Exige evidência antes de mover para EXPANDED
+  if (body.data.status === 'EXPANDED' && existing.status !== 'EXPANDED') {
+    const evidenceCount = await prisma.file.count({
+      where: { cardId: req.params.id, isEvidence: true },
+    })
+    if (evidenceCount === 0) {
+      res.status(422).json({
+        error: 'Anexe uma evidência do trabalho antes de marcar como Expandido.',
+        code:  'EVIDENCE_REQUIRED',
+        cardId: req.params.id,
+      })
+      return
+    }
+  }
+
   const updated = await prisma.kanbanCard.update({
     where: { id: req.params.id },
     data:  body.data,
@@ -134,6 +155,35 @@ router.put('/cards/:id', async (req: AuthenticatedRequest, res) => {
         newStatus: updated.status,
       },
     })
+
+    if (body.data.status === 'EXPANDED') {
+      const alreadyHasGoal = await prisma.expansionGoal.findFirst({ where: { cardId: updated.id } })
+      if (!alreadyHasGoal) {
+        const now = new Date()
+        const additional = await prisma.cardAdditionalCnpj.findMany({
+          where: { cardId: updated.id },
+          select: { cnpj: true },
+        })
+        const allCnpjs = [updated.clientId, ...additional.map((a) => a.cnpj)]
+        const rows = await aggregateRecentBilling(allCnpjs, 4)
+        const completed = rows
+          .filter((r) => r.year < now.getFullYear() || (r.year === now.getFullYear() && r.month < now.getMonth() + 1))
+          .slice(-3)
+        const baselineAvg = completed.length > 0
+          ? Math.round((completed.reduce((s, r) => s + r.billing, 0) / 3) * 100) / 100
+          : 0
+        await prisma.expansionGoal.create({
+          data: {
+            clientId:    updated.clientId,
+            vendorId:    updated.assignedToId ?? req.user!.userId,
+            cardId:      updated.id,
+            startDate:   now,
+            baselineAvg,
+            status:      'ACTIVE',
+          },
+        })
+      }
+    }
   }
 
   res.json(updated)
@@ -147,6 +197,60 @@ router.delete('/cards/:id', requireRole(Role.MANAGER), async (req, res) => {
     return
   }
   await prisma.kanbanCard.delete({ where: { id: req.params.id } })
+  res.status(204).send()
+})
+
+// ── Additional CNPJs ──────────────────────────────────────────────────────────
+
+// GET /kanban/cards/:id/cnpjs
+router.get('/cards/:id/cnpjs', async (req, res) => {
+  const card = await prisma.kanbanCard.findUnique({ where: { id: req.params.id } })
+  if (!card) { res.status(404).json({ error: 'Card not found' }); return }
+  const cnpjs = await prisma.cardAdditionalCnpj.findMany({
+    where: { cardId: req.params.id },
+    orderBy: { createdAt: 'asc' },
+  })
+  res.json(cnpjs)
+})
+
+// POST /kanban/cards/:id/cnpjs
+router.post('/cards/:id/cnpjs', async (req: AuthenticatedRequest, res) => {
+  const schema = z.object({ cnpj: z.string().min(1), name: z.string().min(1) })
+  const body = schema.safeParse(req.body)
+  if (!body.success) { res.status(400).json({ error: body.error.flatten() }); return }
+
+  const card = await prisma.kanbanCard.findUnique({ where: { id: req.params.id } })
+  if (!card) { res.status(404).json({ error: 'Card not found' }); return }
+
+  if (req.user!.role === Role.VENDOR && card.assignedToId !== req.user!.userId) {
+    res.status(403).json({ error: 'Forbidden' }); return
+  }
+  if (body.data.cnpj === card.clientId) {
+    res.status(400).json({ error: 'Este CNPJ já é o CNPJ principal do card' }); return
+  }
+
+  try {
+    const additional = await prisma.cardAdditionalCnpj.create({
+      data: { cardId: req.params.id, cnpj: body.data.cnpj, name: body.data.name },
+    })
+    res.status(201).json(additional)
+  } catch {
+    res.status(409).json({ error: 'CNPJ já vinculado a este card' })
+  }
+})
+
+// DELETE /kanban/cards/:id/cnpjs/:cnpj
+router.delete('/cards/:id/cnpjs/:cnpj', async (req: AuthenticatedRequest, res) => {
+  const card = await prisma.kanbanCard.findUnique({ where: { id: req.params.id } })
+  if (!card) { res.status(404).json({ error: 'Card not found' }); return }
+
+  if (req.user!.role === Role.VENDOR && card.assignedToId !== req.user!.userId) {
+    res.status(403).json({ error: 'Forbidden' }); return
+  }
+
+  await prisma.cardAdditionalCnpj.deleteMany({
+    where: { cardId: req.params.id, cnpj: req.params.cnpj },
+  })
   res.status(204).send()
 })
 
