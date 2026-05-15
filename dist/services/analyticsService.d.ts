@@ -83,3 +83,21 @@ export declare function getClientById(cnpj: string): Promise<{
     city: string | null;
     tipo: string | null;
 } | null>;
+export declare function aggregateMonthlyHistory(cnpjs: string[]): Promise<{
+    year: number;
+    month: number;
+    billing: number;
+}[]>;
+export declare function aggregateRecentBilling(cnpjs: string[], months: number): Promise<{
+    year: number;
+    month: number;
+    billing: number;
+}[]>;
+export declare function aggregateCurrentMonth(cnpjs: string[]): Promise<number>;
+export declare function aggregateCurrentMonthFromDaily(cnpjs: string[]): Promise<number>;
+export declare function aggregateWeeklyBilling(cnpjs: string[]): Promise<{
+    year: number;
+    week: number;
+    billing: number;
+}[]>;
+export declare function getCardCnpjs(primaryCnpj: string, cardId: string | null): Promise<string[]>;

@@ -33,6 +33,7 @@ async function login(email, password) {
     return {
         accessToken,
         refreshToken,
+        mustChangePassword: user.mustChangePassword,
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
     };
 }

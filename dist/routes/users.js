@@ -108,7 +108,7 @@ router.put('/:id/password', async (req, res) => {
         res.status(404).json({ error: 'Usuário não encontrado' });
         return;
     }
-    if (!isManager) {
+    if (!isManager && !user.mustChangePassword) {
         if (!result.data.currentPassword) {
             res.status(400).json({ error: 'Senha atual obrigatória' });
             return;
@@ -120,7 +120,10 @@ router.put('/:id/password', async (req, res) => {
         }
     }
     const passwordHash = await (0, authService_1.hashPassword)(result.data.newPassword);
-    await prisma_1.prisma.user.update({ where: { id: req.params.id }, data: { passwordHash } });
+    await prisma_1.prisma.user.update({
+        where: { id: req.params.id },
+        data: { passwordHash, mustChangePassword: false },
+    });
     res.json({ message: 'Senha alterada com sucesso' });
 });
 exports.default = router;

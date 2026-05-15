@@ -1,6 +1,7 @@
 export declare function login(email: string, password: string): Promise<{
     accessToken: string;
     refreshToken: string;
+    mustChangePassword: boolean;
     user: {
         id: string;
         name: string;

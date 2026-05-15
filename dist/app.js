@@ -50,6 +50,8 @@ const metrics_1 = __importDefault(require("./routes/metrics"));
 const files_1 = __importDefault(require("./routes/files"));
 const messages_1 = __importDefault(require("./routes/messages"));
 const reports_1 = __importDefault(require("./routes/reports"));
+const chat_1 = __importDefault(require("./routes/chat"));
+const hypercare_1 = __importDefault(require("./routes/hypercare"));
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({
     origin: process.env.CORS_ORIGIN || '*',
@@ -61,7 +63,7 @@ app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use('/uploads', express_1.default.static(path_1.default.join(process.cwd(), 'uploads')));
 app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', version: '1.0.4', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', version: '1.1.5', timestamp: new Date().toISOString() });
 });
 app.get('/diag', async (_req, res) => {
     const { prisma } = await Promise.resolve().then(() => __importStar(require('./db/prisma')));
@@ -83,6 +85,84 @@ app.get('/diag', async (_req, res) => {
         }
     }
     res.json(results);
+});
+app.get('/diag/dim-bases', async (_req, res) => {
+    const mysql = await Promise.resolve().then(() => __importStar(require('mysql2/promise')));
+    let conn = null;
+    try {
+        conn = await mysql.createConnection({
+            host: process.env.BI_DB_HOST,
+            port: Number(process.env.BI_DB_PORT ?? 3306),
+            user: process.env.BI_DB_USER,
+            password: process.env.BI_DB_PASSWORD,
+            database: process.env.BI_DB_NAME ?? 'bexsal_dw',
+            timezone: '-03:00',
+        });
+        const [rows] = await conn.query(`
+      SELECT sigla, regiao_resumida AS mesoregiao, nome_base AS nome_praca
+      FROM bexsal_dw.dim_bases
+      WHERE sigla IS NOT NULL AND sigla != ''
+      ORDER BY mesoregiao, sigla
+    `);
+        const grouped = {};
+        for (const r of rows) {
+            const key = r.mesoregiao ?? '(sem mesoregiao)';
+            if (!grouped[key])
+                grouped[key] = [];
+            grouped[key].push({ sigla: r.sigla, nome_praca: r.nome_praca });
+        }
+        res.json({ total: rows.length, mesoregions: grouped });
+    }
+    catch (e) {
+        res.status(500).json({ error: e?.message });
+    }
+    finally {
+        await conn?.end();
+    }
+});
+app.get('/diag/client-routes/:cnpj', async (req, res) => {
+    const mysql = await Promise.resolve().then(() => __importStar(require('mysql2/promise')));
+    let conn = null;
+    try {
+        conn = await mysql.createConnection({
+            host: process.env.BI_DB_HOST,
+            port: Number(process.env.BI_DB_PORT ?? 3306),
+            user: process.env.BI_DB_USER,
+            password: process.env.BI_DB_PASSWORD,
+            database: process.env.BI_DB_NAME ?? 'bexsal_dw',
+            timezone: '-03:00',
+        });
+        const cnpj = req.params.cnpj.replace(/\D/g, '');
+        const [rows] = await conn.query(`
+      SELECT
+        LEFT(fn.praca_destino, 3)  AS sigla,
+        db.regiao_resumida         AS mesoregiao,
+        COUNT(*)                   AS entregas
+      FROM bexsal_dw.fato_notas fn
+      LEFT JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
+      WHERE fn.cnpj_pagador = ?
+        AND fn.tipo_documento IN ('NORMAL', 'SUBC FORM CTRC', 'REDESPACHO')
+        AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
+        AND YEAR(fn.data_emissao) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+        AND MONTH(fn.data_emissao) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+      GROUP BY LEFT(fn.praca_destino, 3), db.regiao_resumida
+      ORDER BY entregas DESC
+    `, [cnpj]);
+        const semMapeamento = rows.filter((r) => !r.mesoregiao);
+        res.json({
+            cnpj,
+            mes: 'ultimo mes completo',
+            total_siglas: rows.length,
+            siglas_sem_mapeamento: semMapeamento.length,
+            rotas: rows,
+        });
+    }
+    catch (e) {
+        res.status(500).json({ error: e?.message });
+    }
+    finally {
+        await conn?.end();
+    }
 });
 app.get('/docs/openapi.json', (_req, res) => {
     res.json(swagger_1.swaggerSpec);
@@ -122,6 +202,8 @@ app.use('/metrics', metrics_1.default);
 app.use('/files', files_1.default);
 app.use('/messages', messages_1.default);
 app.use('/reports', reports_1.default);
+app.use('/chat', chat_1.default);
+app.use('/hypercare', hypercare_1.default);
 app.use((_req, res) => {
     res.status(404).json({ error: 'Rota não encontrada' });
 });

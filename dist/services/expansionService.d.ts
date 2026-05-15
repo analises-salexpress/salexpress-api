@@ -13,9 +13,20 @@ export interface OpportunityScore {
     uncoveredRevenueEstimate: number;
     totalScore: number;
     hasKanbanCard: boolean;
+    kanbanCard: {
+        id: string;
+        status: string;
+        priority: string;
+        assignedToId: string | null;
+    } | null;
     manualExpansionPotential: number | null;
+    expansionRegions: string[];
 }
-export declare function getOpportunities(limit?: number, offset?: number): Promise<{
+export declare function getOpportunities(limit?: number, offset?: number, filterRegion?: string, filterSegment?: string, filterCity?: string, tab?: 'new' | 'in_progress'): Promise<{
+    opportunities: OpportunityScore[];
+    total: number;
+}>;
+export declare function getInProgressOpportunities(limit?: number, offset?: number): Promise<{
     opportunities: OpportunityScore[];
     total: number;
 }>;
@@ -43,6 +54,7 @@ export declare function getClientExpansionDetail(cnpj: string): Promise<{
     }[];
     uncoveredRoutes: {
         region: string;
+        tripCount: number;
         expansionPotential: number;
     }[];
     monthlyHistory: {
@@ -52,3 +64,22 @@ export declare function getClientExpansionDetail(cnpj: string): Promise<{
     }[];
 }>;
 export declare function calcNrr(cnpj: string): Promise<number | null>;
+export interface ChurnEntry {
+    cnpj: string;
+    clientName: string;
+    groupedName: string;
+    city: string | null;
+    state: string | null;
+    segment: string | null;
+    baselineBilling: number;
+    lastMonthBilling: number;
+    dropAmount: number;
+    dropPercent: number;
+    churnType: 'CHURN' | 'POSSIVEL_CHURN';
+    weeklyTrend: number[];
+    hasKanbanCard: boolean;
+}
+export declare function getChurnAnalysis(limit?: number, offset?: number, filterSegment?: string, filterCity?: string, filterType?: 'CHURN' | 'POSSIVEL_CHURN'): Promise<{
+    churns: ChurnEntry[];
+    total: number;
+}>;

@@ -23,7 +23,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         res.status(400).json({ error: 'No file uploaded' });
         return;
     }
-    const { clientId, cardId } = req.body;
+    const { clientId, cardId, isEvidence } = req.body;
     const ext = req.file.originalname.split('.').pop();
     const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase_1.supabase.storage
@@ -44,6 +44,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             uploadedById: req.user.userId,
             clientId: clientId ?? null,
             cardId: cardId ?? null,
+            isEvidence: isEvidence === 'true' || isEvidence === true,
         },
     });
     res.status(201).json(file);
