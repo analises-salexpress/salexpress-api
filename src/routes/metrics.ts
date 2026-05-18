@@ -313,21 +313,32 @@ router.get('/expansion/quarterly', async (req: AuthenticatedRequest, res) => {
 })
 
 // GET /metrics/dashboard — visão geral completa para a tela de Dashboards
+// ?status=IDENTIFIED|CONTACTED|NEGOTIATING|EXPANDED|LOST  (opcional — filtra seção "Negociação")
 router.get('/dashboard', async (req: AuthenticatedRequest, res) => {
   const now = new Date()
 
-  // ── Kanban pipeline ────────────────────────────────────────────────────────
+  // Status filter para a seção "Negociação em Andamento"
+  const VALID_STATUSES = new Set(['IDENTIFIED', 'CONTACTED', 'NEGOTIATING', 'EXPANDED', 'LOST'])
+  const DEFAULT_ACTIVE  = ['IDENTIFIED', 'CONTACTED', 'NEGOTIATING']
+  const filterStatus    = req.query.status as string | undefined
+  const negotiationStatuses: string[] =
+    filterStatus && VALID_STATUSES.has(filterStatus.toUpperCase())
+      ? [filterStatus.toUpperCase()]
+      : DEFAULT_ACTIVE
+
+  const vendorFilter = req.user!.role === Role.VENDOR ? { assignedToId: req.user!.userId } : {}
+
+  // ── Kanban pipeline — sempre mostra o funil completo ──────────────────────
   const allCards = await prisma.kanbanCard.findMany({
-    where: req.user!.role === Role.VENDOR ? { assignedToId: req.user!.userId } : {},
+    where: vendorFilter,
     select: { status: true, manualExpansionPotential: true, expansionForecast: true },
   })
 
   const pipeline = {
     identified: 0, contacted: 0, negotiating: 0, won: 0, lost: 0,
     totalActive: 0,
-    // Valores abaixo somam SOMENTE cards ativos (IDENTIFIED + CONTACTED + NEGOTIATING)
-    totalPotential:     0,  // soma de manualExpansionPotential dos ativos
-    totalForecast:      0,  // soma de expansionForecast dos ativos
+    totalPotential:     0,
+    totalForecast:      0,
     cardsWithPotential: 0,
     cardsWithForecast:  0,
   }
@@ -355,30 +366,40 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res) => {
   pipeline.totalPotential = Math.round(pipeline.totalPotential * 100) / 100
   pipeline.totalForecast  = Math.round(pipeline.totalForecast  * 100) / 100
 
-  // ── Negociação em andamento — cards ativos com potencial definido ─────────
-  // "Valor total negociado" = soma do potencial manual dos cards ativos
-  // delta = potencial − baseline (calculado via bi_client_monthly)
-  const activeCards = await prisma.kanbanCard.findMany({
-    where: {
-      status: { in: ['IDENTIFIED', 'CONTACTED', 'NEGOTIATING'] },
-      ...(req.user!.role === Role.VENDOR ? { assignedToId: req.user!.userId } : {}),
-      manualExpansionPotential: { not: null },
-    },
-    select: { clientId: true, manualExpansionPotential: true },
-  })
+  // ── Negociação — filtrada pelo status selecionado no funil ────────────────
+  const [filteredCount, filteredCardsWithPotential] = await Promise.all([
+    prisma.kanbanCard.count({
+      where: { status: { in: negotiationStatuses as any }, ...vendorFilter },
+    }),
+    prisma.kanbanCard.findMany({
+      where: {
+        status: { in: negotiationStatuses as any },
+        ...vendorFilter,
+        manualExpansionPotential: { not: null },
+      },
+      select: { clientId: true, manualExpansionPotential: true, expansionForecast: true },
+    }),
+  ])
 
   let totalNegotiationDelta = 0
-  for (const c of activeCards) {
+  let totalPotentialFiltered = 0
+  let totalForecastFiltered  = 0
+
+  for (const c of filteredCardsWithPotential) {
     const avg = await recentAvg([c.clientId], 3)
-    totalNegotiationDelta += (c.manualExpansionPotential! - avg)
+    // Ganho potencial líquido é sempre ≥ 0: só conta quando potencial > frete base
+    totalNegotiationDelta  += Math.max(0, c.manualExpansionPotential! - avg)
+    totalPotentialFiltered += c.manualExpansionPotential!
+    if (c.expansionForecast != null) totalForecastFiltered += c.expansionForecast
   }
 
   const negotiation = {
-    clientsInNegotiation:    pipeline.totalActive,
-    clientsWithPotential:    pipeline.cardsWithPotential,
-    totalPotential:          pipeline.totalPotential,   // soma dos potenciais manuais
-    totalNegotiationDelta:   Math.round(totalNegotiationDelta * 100) / 100, // potencial − baseline atual
-    totalForecast:           pipeline.totalForecast,    // soma das previsões de expansão
+    filteredStatus:          filterStatus?.toUpperCase() ?? 'TODOS',
+    clientsInNegotiation:    filteredCount,
+    clientsWithPotential:    filteredCardsWithPotential.length,
+    totalPotential:          Math.round(totalPotentialFiltered * 100) / 100,
+    totalNegotiationDelta:   Math.round(totalNegotiationDelta  * 100) / 100,
+    totalForecast:           Math.round(totalForecastFiltered  * 100) / 100,
   }
 
   // ── Expansion goals projection ─────────────────────────────────────────────
