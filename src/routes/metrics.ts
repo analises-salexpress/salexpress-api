@@ -11,7 +11,12 @@ import {
   aggregateWeeklyBilling,
   getCardCnpjs,
 } from '../services/analyticsService'
+import {
+  getExpansionPresentationWeekly,
+  getExpansionPresentationMonthly,
+} from '../services/deliveryService'
 import { Role } from '@prisma/client'
+import ExcelJS from 'exceljs'
 
 const router = Router()
 
@@ -799,6 +804,118 @@ router.post('/goals', async (req: AuthenticatedRequest, res) => {
     data: { ...body.data, vendorId: req.user!.userId },
   })
   res.status(201).json(goal)
+})
+
+// GET /metrics/expansion/:goalId/presentation — financial data for "Apresentar Expansão"
+router.get('/expansion/:goalId/presentation', async (req: AuthenticatedRequest, res) => {
+  const goal = await prisma.expansionGoal.findUnique({
+    where: { id: req.params.goalId },
+    include: { card: { select: { id: true, clientName: true } } },
+  })
+  if (!goal) { res.status(404).json({ error: 'Goal not found' }); return }
+  if (req.user!.role === Role.VENDOR && goal.vendorId !== req.user!.userId) {
+    res.status(403).json({ error: 'Forbidden' }); return
+  }
+
+  const cnpjs     = await getCardCnpjs(goal.clientId, goal.cardId)
+  const startDate = new Date(goal.startDate)
+
+  const [weekly, monthly] = await Promise.all([
+    getExpansionPresentationWeekly(cnpjs, startDate),
+    getExpansionPresentationMonthly(cnpjs, startDate),
+  ])
+
+  res.json({
+    goalId:      goal.id,
+    clientId:    goal.clientId,
+    clientName:  goal.card?.clientName ?? goal.clientId,
+    cnpjs,
+    startDate:   goal.startDate,
+    baselineAvg: goal.baselineAvg,
+    targetValue: goal.targetValue,
+    weekly,
+    monthly,
+  })
+})
+
+// GET /metrics/expansion/:goalId/presentation/export — Excel download
+router.get('/expansion/:goalId/presentation/export', async (req: AuthenticatedRequest, res) => {
+  const goal = await prisma.expansionGoal.findUnique({
+    where: { id: req.params.goalId },
+    include: { card: { select: { id: true, clientName: true } } },
+  })
+  if (!goal) { res.status(404).json({ error: 'Goal not found' }); return }
+  if (req.user!.role === Role.VENDOR && goal.vendorId !== req.user!.userId) {
+    res.status(403).json({ error: 'Forbidden' }); return
+  }
+
+  const cnpjs       = await getCardCnpjs(goal.clientId, goal.cardId)
+  const startDate   = new Date(goal.startDate)
+  const baselineAvg = goal.baselineAvg
+  const clientName  = goal.card?.clientName ?? goal.clientId
+
+  const [weekly, monthly] = await Promise.all([
+    getExpansionPresentationWeekly(cnpjs, startDate),
+    getExpansionPresentationMonthly(cnpjs, startDate),
+  ])
+
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Sal Express'
+  wb.created = new Date()
+
+  // ── Semana a Semana ──
+  const ws1 = wb.addWorksheet('Semana a Semana')
+  ws1.columns = [
+    { header: 'Semana',             key: 'weekLabel',       width: 14 },
+    { header: 'Notas',              key: 'totalNotas',      width: 10 },
+    { header: 'Valor da Nota (R$)', key: 'valorMercadoria', width: 18 },
+    { header: 'Frete (R$)',         key: 'valorFrete',      width: 16 },
+    { header: '% da Nota',          key: 'pctNota',         width: 12 },
+  ]
+  ws1.getRow(1).font = { bold: true }
+  for (const r of weekly) {
+    ws1.addRow({
+      weekLabel:       r.weekLabel,
+      totalNotas:      r.totalNotas,
+      valorMercadoria: r.valorMercadoria,
+      valorFrete:      r.valorFrete,
+      pctNota:         r.pctNota !== null ? `${r.pctNota.toFixed(2)}%` : '-',
+    })
+  }
+
+  // ── Mês a Mês ──
+  const ws2 = wb.addWorksheet('Mês a Mês')
+  ws2.columns = [
+    { header: 'Mês',                key: 'monthLabel',      width: 12 },
+    { header: 'Notas',              key: 'totalNotas',      width: 10 },
+    { header: 'Valor da Nota (R$)', key: 'valorMercadoria', width: 18 },
+    { header: 'Frete (R$)',         key: 'valorFrete',      width: 16 },
+    { header: '% da Nota',          key: 'pctNota',         width: 12 },
+    { header: 'Baseline (R$)',      key: 'baseline',        width: 16 },
+    { header: 'Δ vs Baseline (R$)', key: 'delta',           width: 18 },
+  ]
+  ws2.getRow(1).font = { bold: true }
+  for (const r of monthly) {
+    const delta = Math.round((r.valorFrete - baselineAvg) * 100) / 100
+    ws2.addRow({
+      monthLabel:      r.monthLabel + (r.isCurrentMonth ? ' *' : ''),
+      totalNotas:      r.totalNotas,
+      valorMercadoria: r.valorMercadoria,
+      valorFrete:      r.valorFrete,
+      pctNota:         r.pctNota !== null ? `${r.pctNota.toFixed(2)}%` : '-',
+      baseline:        baselineAvg,
+      delta,
+    })
+  }
+  if (monthly.some((m) => m.isCurrentMonth)) {
+    ws2.addRow({ monthLabel: '* Mês em curso (parcial)' })
+  }
+
+  const safeName = clientName.replace(/[^a-zA-Z0-9 ]/g, '').trim().substring(0, 30)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', `attachment; filename="apresentacao_${safeName}.xlsx"`)
+  await wb.xlsx.write(res)
+  res.end()
 })
 
 // PUT /metrics/goals/:id/status
