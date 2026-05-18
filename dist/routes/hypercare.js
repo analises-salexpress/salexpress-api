@@ -256,6 +256,8 @@ async function getClientAllCnpjs(clientId) {
     return [client.cnpj, ...client.additionalCnpjs.map((a) => a.cnpj)];
 }
 // GET /hypercare/clients/:id/performance?days=30
+// GET /hypercare/clients/:id/performance?filterYear=2025&filterWeek=20
+// GET /hypercare/clients/:id/performance?filterYear=2025&filterMonth=5
 router.get('/clients/:id/performance', async (req, res) => {
     const client = await prisma_1.prisma.hypercareClient.findUnique({
         where: { id: req.params.id },
@@ -265,13 +267,29 @@ router.get('/clients/:id/performance', async (req, res) => {
         res.status(404).json({ error: 'Not found' });
         return;
     }
-    const days = Math.min(Number(req.query.days ?? 90), 180);
-    const weeks = Math.ceil(days / 7);
     const cnpjs = [client.cnpj, ...client.additionalCnpjs.map((a) => a.cnpj)];
-    const [byFilial, weekly, monthly] = await Promise.all([
-        (0, deliveryService_1.getDeliveryPerformanceByFilial)(cnpjs, days),
-        (0, deliveryService_1.getDeliveryPerformanceWeekly)(cnpjs, weeks),
-        (0, deliveryService_1.getDeliveryPerformanceMonthly)(cnpjs, 3),
+    const filterYear = req.query.filterYear ? Number(req.query.filterYear) : null;
+    const filterWeek = req.query.filterWeek ? Number(req.query.filterWeek) : null;
+    const filterMonth = req.query.filterMonth ? Number(req.query.filterMonth) : null;
+    let byFilial;
+    let filterLabel = null;
+    if (filterYear && filterWeek) {
+        byFilial = await (0, deliveryService_1.getDeliveryFilialByWeek)(cnpjs, filterYear, filterWeek);
+        filterLabel = `S${String(filterWeek).padStart(2, '0')}/${filterYear}`;
+    }
+    else if (filterYear && filterMonth) {
+        byFilial = await (0, deliveryService_1.getDeliveryFilialByMonth)(cnpjs, filterYear, filterMonth);
+        const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        filterLabel = `${MONTH_NAMES[filterMonth - 1]}/${filterYear}`;
+    }
+    else {
+        const days = Math.min(Number(req.query.days ?? 90), 180);
+        byFilial = await (0, deliveryService_1.getDeliveryPerformanceByFilial)(cnpjs, days);
+    }
+    const [weekly, monthly, availablePeriods] = await Promise.all([
+        (0, deliveryService_1.getDeliveryPerformanceWeekly)(cnpjs, 12),
+        (0, deliveryService_1.getDeliveryPerformanceMonthly)(cnpjs, 18),
+        (0, deliveryService_1.getAvailableFilialPeriods)(cnpjs),
     ]);
     const totalDelivered = byFilial.reduce((s, f) => s + f.noPrazo + f.foraPrazo, 0);
     const totalNoPrazo = byFilial.reduce((s, f) => s + f.noPrazo, 0);
@@ -283,7 +301,7 @@ router.get('/clients/:id/performance', async (req, res) => {
         cnpj: client.cnpj,
         clientName: client.clientName,
         cnpjs,
-        days,
+        filterLabel,
         overall: {
             performancePct: overallPct,
             semaforo: overallPct === null ? 'no_data'
@@ -298,6 +316,8 @@ router.get('/clients/:id/performance', async (req, res) => {
         byFilial,
         weekly,
         monthly,
+        availableWeeks: availablePeriods.weeks,
+        availableMonths: availablePeriods.months,
     });
 });
 // ── Touchpoints ───────────────────────────────────────────────────────────────

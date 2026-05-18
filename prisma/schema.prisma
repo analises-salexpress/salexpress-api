@@ -337,6 +337,24 @@ model BiDeliveryFilial {
   @@map("bi_delivery_filial")
 }
 
+model BiDeliveryFilialMonthly {
+  id             Int      @id @default(autoincrement())
+  cnpj           String
+  filial         String
+  year           Int
+  month          Int
+  totalEntregas  Int      @default(0) @map("total_entregas")
+  noPrazo        Int      @default(0) @map("no_prazo")
+  foraPrazo      Int      @default(0) @map("fora_prazo")
+  pendente       Int      @default(0)
+  performancePct Float?   @map("performance_pct")
+  syncedAt       DateTime @default(now()) @map("synced_at")
+
+  @@unique([cnpj, filial, year, month])
+  @@index([cnpj, filial])
+  @@map("bi_delivery_filial_monthly")
+}
+
 model BiDeliveryFilialWeekly {
   id             Int      @id @default(autoincrement())
   cnpj           String

@@ -76,6 +76,144 @@ function isoWeekStart(year: number, week: number): Date {
   return d
 }
 
+export async function getDeliveryFilialByWeek(
+  cnpjs: string[],
+  year: number,
+  week: number,
+): Promise<FilialPerformance[]> {
+  if (cnpjs.length === 0) return []
+  const rows = await prisma.biDeliveryFilialWeekly.findMany({
+    where: { cnpj: { in: cnpjs }, year, week },
+    orderBy: { totalEntregas: 'desc' },
+  })
+
+  const filialMap = new Map<string, { totalEntregas: number; noPrazo: number }>()
+  for (const r of rows) {
+    const prev = filialMap.get(r.filial)
+    if (prev) {
+      prev.totalEntregas += r.totalEntregas
+      prev.noPrazo += r.noPrazo
+    } else {
+      filialMap.set(r.filial, { totalEntregas: r.totalEntregas, noPrazo: r.noPrazo })
+    }
+  }
+
+  return Array.from(filialMap.entries())
+    .sort((a, b) => b[1].totalEntregas - a[1].totalEntregas)
+    .map(([filial, d]) => {
+      const pct = d.totalEntregas > 0
+        ? Math.round(d.noPrazo / d.totalEntregas * 1000) / 10
+        : null
+      return {
+        filial,
+        cidade:         null,
+        totalEntregas:  d.totalEntregas,
+        noPrazo:        d.noPrazo,
+        foraPrazo:      d.totalEntregas - d.noPrazo,
+        pendente:       0,
+        performancePct: pct,
+        semaforo:       semaforo(pct),
+      }
+    })
+}
+
+export async function getDeliveryFilialByMonth(
+  cnpjs: string[],
+  year: number,
+  month: number,
+): Promise<FilialPerformance[]> {
+  if (cnpjs.length === 0) return []
+  const rows = await prisma.biDeliveryFilialMonthly.findMany({
+    where: { cnpj: { in: cnpjs }, year, month },
+    orderBy: { totalEntregas: 'desc' },
+  })
+
+  const filialMap = new Map<string, { totalEntregas: number; noPrazo: number; foraPrazo: number; pendente: number }>()
+  for (const r of rows) {
+    const prev = filialMap.get(r.filial)
+    if (prev) {
+      prev.totalEntregas += r.totalEntregas
+      prev.noPrazo       += r.noPrazo
+      prev.foraPrazo     += r.foraPrazo
+      prev.pendente      += r.pendente
+    } else {
+      filialMap.set(r.filial, {
+        totalEntregas: r.totalEntregas,
+        noPrazo:       r.noPrazo,
+        foraPrazo:     r.foraPrazo,
+        pendente:      r.pendente,
+      })
+    }
+  }
+
+  return Array.from(filialMap.entries())
+    .sort((a, b) => b[1].totalEntregas - a[1].totalEntregas)
+    .map(([filial, d]) => {
+      const delivered = d.noPrazo + d.foraPrazo
+      const pct = delivered > 0
+        ? Math.round(d.noPrazo / delivered * 1000) / 10
+        : null
+      return {
+        filial,
+        cidade:         null,
+        totalEntregas:  d.totalEntregas,
+        noPrazo:        d.noPrazo,
+        foraPrazo:      d.foraPrazo,
+        pendente:       d.pendente,
+        performancePct: pct,
+        semaforo:       semaforo(pct),
+      }
+    })
+}
+
+// Returns available weeks and months for filter dropdowns
+export async function getAvailableFilialPeriods(
+  cnpjs: string[],
+): Promise<{
+  weeks: { year: number; week: number; label: string }[]
+  months: { year: number; month: number; label: string }[]
+}> {
+  if (cnpjs.length === 0) return { weeks: [], months: [] }
+
+  const [weekRows, monthRows] = await Promise.all([
+    prisma.biDeliveryFilialWeekly.findMany({
+      where: { cnpj: { in: cnpjs } },
+      select: { year: true, week: true },
+      distinct: ['year', 'week'],
+      orderBy: [{ year: 'desc' }, { week: 'desc' }],
+      take: 24,
+    }),
+    prisma.biDeliveryFilialMonthly.findMany({
+      where: { cnpj: { in: cnpjs } },
+      select: { year: true, month: true },
+      distinct: ['year', 'month'],
+      orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      take: 18,
+    }),
+  ])
+
+  const uniqueWeeks = Array.from(
+    new Map(weekRows.map((r) => [`${r.year}-${r.week}`, r])).values()
+  ).sort((a, b) => b.year - a.year || b.week - a.week)
+
+  const uniqueMonths = Array.from(
+    new Map(monthRows.map((r) => [`${r.year}-${r.month}`, r])).values()
+  ).sort((a, b) => b.year - a.year || b.month - a.month)
+
+  return {
+    weeks: uniqueWeeks.map((r) => ({
+      year: r.year,
+      week: r.week,
+      label: `S${String(r.week).padStart(2, '0')}/${r.year}`,
+    })),
+    months: uniqueMonths.map((r) => ({
+      year: r.year,
+      month: r.month,
+      label: `${MONTH_NAMES[r.month - 1]}/${r.year}`,
+    })),
+  }
+}
+
 export async function getDeliveryFilialWeekly(
   cnpjs: string[],
   filial: string,

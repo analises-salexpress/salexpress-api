@@ -209,6 +209,37 @@ export const QUERY_DELIVERY_FILIAL = `
   GROUP BY fn.cnpj_pagador, db.emissor_resumido
 `
 
+export const QUERY_DELIVERY_FILIAL_MONTHLY = `
+  SELECT
+    fn.cnpj_pagador               AS cnpj,
+    db.emissor_resumido           AS filial,
+    YEAR(fn.previsao_entrega)     AS year,
+    MONTH(fn.previsao_entrega)    AS month,
+    COUNT(*)                      AS totalEntregas,
+    SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
+             AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END) AS noPrazo,
+    SUM(CASE WHEN fn.data_entrega_realizada > fn.previsao_entrega
+          OR (fn.data_entrega_realizada IS NULL AND fn.previsao_entrega < CURDATE()) THEN 1 ELSE 0 END) AS foraPrazo,
+    SUM(CASE WHEN fn.data_entrega_realizada IS NULL
+             AND fn.previsao_entrega >= CURDATE() THEN 1 ELSE 0 END) AS pendente,
+    ROUND(
+      SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
+               AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END)
+      / NULLIF(SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
+      * 100, 1
+    ) AS performancePct
+  FROM bexsal_dw.fato_notas fn
+  JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
+  WHERE fn.previsao_entrega IS NOT NULL
+    AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
+    AND fn.unidade_emissora != 'MTZ'
+    AND fn.login != 'maira'
+    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
+    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fn.cnpj_pagador, db.emissor_resumido, YEAR(fn.previsao_entrega), MONTH(fn.previsao_entrega)
+  ORDER BY fn.cnpj_pagador, filial, year, month
+`
+
 export const QUERY_DELIVERY_FILIAL_WEEKLY = `
   SELECT
     fn.cnpj_pagador              AS cnpj,
