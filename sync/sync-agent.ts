@@ -10,6 +10,7 @@ import {
   QUERY_ALL_ROUTES,
   QUERY_DELIVERY_PERF,
   QUERY_DELIVERY_FILIAL,
+  QUERY_DELIVERY_FILIAL_WEEKLY,
   QUERY_DELIVERY_WEEKLY,
   QUERY_DELIVERY_MONTHLY,
 } from './queries'
@@ -238,6 +239,23 @@ async function syncDeliveryFilial(conn: mysql.Connection) {
   log(`  → ${n} delivery filial rows upserted`)
 }
 
+async function syncDeliveryFilialWeekly(conn: mysql.Connection) {
+  log('Syncing bi_delivery_filial_weekly…')
+  const [rows] = await conn.query(QUERY_DELIVERY_FILIAL_WEEKLY)
+  const data = (rows as any[]).map((r) => ({
+    cnpj:            r.cnpj,
+    filial:          r.filial,
+    year:            Number(r.year),
+    week:            Number(r.week),
+    total_entregas:  Number(r.totalEntregas ?? 0),
+    no_prazo:        Number(r.noPrazo ?? 0),
+    performance_pct: r.performancePct !== null ? Number(r.performancePct) : null,
+    synced_at:       new Date().toISOString(),
+  }))
+  const n = await upsert('bi_delivery_filial_weekly', data, ['cnpj', 'filial', 'year', 'week'])
+  log(`  → ${n} delivery filial weekly rows upserted`)
+}
+
 async function syncDeliveryWeekly(conn: mysql.Connection) {
   log('Syncing bi_delivery_weekly…')
   const [rows] = await conn.query(QUERY_DELIVERY_WEEKLY)
@@ -335,6 +353,7 @@ async function main() {
     await syncAllRoutes(conn)
     await syncDeliveryPerf(conn)
     await syncDeliveryFilial(conn)
+    await syncDeliveryFilialWeekly(conn)
     await syncDeliveryWeekly(conn)
     await syncDeliveryMonthly(conn)
     await cleanOldDaily()

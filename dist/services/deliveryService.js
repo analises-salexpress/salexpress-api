@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDeliveryFilialWeekly = getDeliveryFilialWeekly;
 exports.getDeliveryPerformanceBatch = getDeliveryPerformanceBatch;
 exports.getDeliveryPerformanceByFilial = getDeliveryPerformanceByFilial;
 exports.getDeliveryPerformanceWeekly = getDeliveryPerformanceWeekly;
@@ -28,6 +29,42 @@ function isoWeekStart(year, week) {
     const d = new Date(week1Monday);
     d.setDate(week1Monday.getDate() + (week - 1) * 7);
     return d;
+}
+async function getDeliveryFilialWeekly(cnpjs, filial, weeks = 12) {
+    if (cnpjs.length === 0)
+        return [];
+    const rows = await prisma_1.prisma.biDeliveryFilialWeekly.findMany({
+        where: { cnpj: { in: cnpjs }, filial },
+        orderBy: [{ year: 'asc' }, { week: 'asc' }],
+    });
+    const weekMap = new Map();
+    for (const r of rows) {
+        const key = `${r.year}-${r.week}`;
+        const prev = weekMap.get(key);
+        if (prev) {
+            prev.totalEntregas += r.totalEntregas;
+            prev.noPrazo += r.noPrazo;
+        }
+        else {
+            weekMap.set(key, { year: r.year, week: r.week, totalEntregas: r.totalEntregas, noPrazo: r.noPrazo });
+        }
+    }
+    const sorted = Array.from(weekMap.values()).sort((a, b) => a.year !== b.year ? a.year - b.year : a.week - b.week);
+    const recent = sorted.slice(-weeks);
+    return recent.map((w) => {
+        const pct = w.totalEntregas > 0
+            ? Math.round(w.noPrazo / w.totalEntregas * 1000) / 10
+            : null;
+        return {
+            year: w.year,
+            week: w.week,
+            weekLabel: `S${String(w.week).padStart(2, '0')}/${w.year}`,
+            totalEntregas: w.totalEntregas,
+            noPrazo: w.noPrazo,
+            performancePct: pct,
+            semaforo: semaforo(pct),
+        };
+    });
 }
 async function getDeliveryPerformanceBatch(cnpjs, _days = 30) {
     if (cnpjs.length === 0)

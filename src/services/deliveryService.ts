@@ -76,6 +76,50 @@ function isoWeekStart(year: number, week: number): Date {
   return d
 }
 
+export async function getDeliveryFilialWeekly(
+  cnpjs: string[],
+  filial: string,
+  weeks = 12,
+): Promise<WeeklyPerformance[]> {
+  if (cnpjs.length === 0) return []
+  const rows = await prisma.biDeliveryFilialWeekly.findMany({
+    where: { cnpj: { in: cnpjs }, filial },
+    orderBy: [{ year: 'asc' }, { week: 'asc' }],
+  })
+
+  const weekMap = new Map<string, { year: number; week: number; totalEntregas: number; noPrazo: number }>()
+  for (const r of rows) {
+    const key = `${r.year}-${r.week}`
+    const prev = weekMap.get(key)
+    if (prev) {
+      prev.totalEntregas += r.totalEntregas
+      prev.noPrazo += r.noPrazo
+    } else {
+      weekMap.set(key, { year: r.year, week: r.week, totalEntregas: r.totalEntregas, noPrazo: r.noPrazo })
+    }
+  }
+
+  const sorted = Array.from(weekMap.values()).sort((a, b) =>
+    a.year !== b.year ? a.year - b.year : a.week - b.week
+  )
+  const recent = sorted.slice(-weeks)
+
+  return recent.map((w) => {
+    const pct = w.totalEntregas > 0
+      ? Math.round(w.noPrazo / w.totalEntregas * 1000) / 10
+      : null
+    return {
+      year:           w.year,
+      week:           w.week,
+      weekLabel:      `S${String(w.week).padStart(2, '0')}/${w.year}`,
+      totalEntregas:  w.totalEntregas,
+      noPrazo:        w.noPrazo,
+      performancePct: pct,
+      semaforo:       semaforo(pct),
+    }
+  })
+}
+
 export async function getDeliveryPerformanceBatch(
   cnpjs: string[],
   _days = 30,

@@ -541,15 +541,15 @@ router.get('/clients/:id/filial-flags', async (req, res) => {
         },
         orderBy: { createdAt: 'asc' },
     });
-    // Enriquecer com performance atual da filial
     const allCnpjs = [client.cnpj, ...client.additionalCnpjs.map((a) => a.cnpj)];
     const filialPerf = await prisma_1.prisma.biDeliveryFilial.findMany({
         where: { cnpj: { in: allCnpjs } },
     });
     const perfMap = new Map(filialPerf.map((f) => [f.filial, f]));
-    const enriched = flags.map((flag) => ({
-        ...flag,
-        currentPerf: perfMap.get(flag.filial) ?? null,
+    const enriched = await Promise.all(flags.map(async (flag) => {
+        const filialData = perfMap.get(flag.filial) ?? null;
+        const weeklyPerf = await (0, deliveryService_1.getDeliveryFilialWeekly)(allCnpjs, flag.filial, 12);
+        return { ...flag, filialData, weeklyPerf };
     }));
     res.json(enriched);
 });
