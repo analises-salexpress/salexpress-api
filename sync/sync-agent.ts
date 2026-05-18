@@ -9,6 +9,8 @@ import {
   QUERY_CLIENT_DAILY,
   QUERY_ALL_ROUTES,
   QUERY_DELIVERY_PERF,
+  QUERY_DELIVERY_PERF_WEEKLY,
+  QUERY_DELIVERY_PERF_MONTHLY,
   QUERY_DELIVERY_FILIAL,
   QUERY_DELIVERY_FILIAL_MONTHLY,
   QUERY_DELIVERY_FILIAL_WEEKLY,
@@ -240,6 +242,38 @@ async function syncDeliveryFilial(conn: mysql.Connection) {
   log(`  → ${n} delivery filial rows upserted`)
 }
 
+async function syncDeliveryPerfWeekly(conn: mysql.Connection) {
+  log('Syncing bi_delivery_perf_weekly…')
+  const [rows] = await conn.query(QUERY_DELIVERY_PERF_WEEKLY)
+  const data = (rows as any[]).map((r) => ({
+    cnpj:            r.cnpj,
+    year:            Number(r.year),
+    week:            Number(r.week),
+    total_entregas:  Number(r.totalEntregas ?? 0),
+    no_prazo:        Number(r.noPrazo ?? 0),
+    performance_pct: r.performancePct !== null ? Number(r.performancePct) : null,
+    synced_at:       new Date().toISOString(),
+  }))
+  const n = await upsert('bi_delivery_perf_weekly', data, ['cnpj', 'year', 'week'])
+  log(`  → ${n} delivery perf weekly rows upserted`)
+}
+
+async function syncDeliveryPerfMonthly(conn: mysql.Connection) {
+  log('Syncing bi_delivery_perf_monthly…')
+  const [rows] = await conn.query(QUERY_DELIVERY_PERF_MONTHLY)
+  const data = (rows as any[]).map((r) => ({
+    cnpj:            r.cnpj,
+    year:            Number(r.year),
+    month:           Number(r.month),
+    total_entregas:  Number(r.totalEntregas ?? 0),
+    no_prazo:        Number(r.noPrazo ?? 0),
+    performance_pct: r.performancePct !== null ? Number(r.performancePct) : null,
+    synced_at:       new Date().toISOString(),
+  }))
+  const n = await upsert('bi_delivery_perf_monthly', data, ['cnpj', 'year', 'month'])
+  log(`  → ${n} delivery perf monthly rows upserted`)
+}
+
 async function syncDeliveryFilialMonthly(conn: mysql.Connection) {
   log('Syncing bi_delivery_filial_monthly…')
   const [rows] = await conn.query(QUERY_DELIVERY_FILIAL_MONTHLY)
@@ -372,6 +406,8 @@ async function main() {
     await syncClientDaily(conn)
     await syncAllRoutes(conn)
     await syncDeliveryPerf(conn)
+    await syncDeliveryPerfWeekly(conn)
+    await syncDeliveryPerfMonthly(conn)
     await syncDeliveryFilial(conn)
     await syncDeliveryFilialMonthly(conn)
     await syncDeliveryFilialWeekly(conn)

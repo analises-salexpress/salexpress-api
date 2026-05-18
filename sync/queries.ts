@@ -156,115 +156,110 @@ export const QUERY_ALL_ROUTES = `
   GROUP BY db.regiao_resumida
 `
 
-// ── Delivery performance (last 30 days) ───────────────────────────────────────
+// ── Delivery performance — all queries use fato_performance (official KPI model)
+// KPI = SUM(pontualidade) / COUNT(*) where pontualidade=1 means NO PRAZO or PENDENTE NO PRAZO
+// Reference: PT_BEX_INDICADORES_PERFORMANCE_GLOBAL (official BI documentation)
 
 export const QUERY_DELIVERY_PERF = `
   SELECT
-    fn.cnpj_pagador AS cnpj,
+    fp.cnpj_pagador AS cnpj,
     COUNT(*) AS totalEntregas,
-    SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-             AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END) AS noPrazo,
-    ROUND(
-      SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-               AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
-      * 100, 1
-    ) AS performancePct
-  FROM bexsal_dw.fato_notas fn
-  WHERE fn.previsao_entrega IS NOT NULL
-    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-    AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
-    AND fn.unidade_emissora != 'MTZ'
-    AND fn.login != 'maira'
-  GROUP BY fn.cnpj_pagador
+    SUM(fp.pontualidade) AS noPrazo,
+    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+  FROM bexsal_dw.fato_performance fp
+  WHERE fp.previsao_entrega_final IS NOT NULL
+    AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    AND fp.previsao_entrega_final < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fp.cnpj_pagador
 `
 
 export const QUERY_DELIVERY_FILIAL = `
   SELECT
-    fn.cnpj_pagador AS cnpj,
+    fp.cnpj_pagador AS cnpj,
     db.emissor_resumido AS filial,
     MAX(db.cidade) AS cidade,
     COUNT(*) AS totalEntregas,
-    SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-             AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END) AS noPrazo,
-    SUM(CASE WHEN fn.data_entrega_realizada > fn.previsao_entrega
-          OR (fn.data_entrega_realizada IS NULL AND fn.previsao_entrega < CURDATE()) THEN 1 ELSE 0 END) AS foraPrazo,
-    SUM(CASE WHEN fn.data_entrega_realizada IS NULL
-             AND fn.previsao_entrega >= CURDATE() THEN 1 ELSE 0 END) AS pendente,
-    ROUND(
-      SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-               AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
-      * 100, 1
-    ) AS performancePct
-  FROM bexsal_dw.fato_notas fn
-  JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
-  WHERE fn.previsao_entrega IS NOT NULL
-    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-    AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
-    AND fn.unidade_emissora != 'MTZ'
-    AND fn.login != 'maira'
-  GROUP BY fn.cnpj_pagador, db.emissor_resumido
+    SUM(fp.pontualidade) AS noPrazo,
+    SUM(CASE WHEN fp.pontualidade = 0 THEN 1 ELSE 0 END) AS foraPrazo,
+    SUM(CASE WHEN fp.data_entrega_final IS NULL THEN 1 ELSE 0 END) AS pendente,
+    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+  FROM bexsal_dw.fato_performance fp
+  JOIN bexsal_dw.dim_bases db ON fp.unidade_receptora = db.sigla
+  WHERE fp.previsao_entrega_final IS NOT NULL
+    AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    AND fp.previsao_entrega_final < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fp.cnpj_pagador, db.emissor_resumido
 `
 
 export const QUERY_DELIVERY_FILIAL_MONTHLY = `
   SELECT
-    fn.cnpj_pagador               AS cnpj,
-    db.emissor_resumido           AS filial,
-    YEAR(fn.previsao_entrega)     AS year,
-    MONTH(fn.previsao_entrega)    AS month,
-    COUNT(*)                      AS totalEntregas,
-    SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-             AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END) AS noPrazo,
-    SUM(CASE WHEN fn.data_entrega_realizada > fn.previsao_entrega
-          OR (fn.data_entrega_realizada IS NULL AND fn.previsao_entrega < CURDATE()) THEN 1 ELSE 0 END) AS foraPrazo,
-    SUM(CASE WHEN fn.data_entrega_realizada IS NULL
-             AND fn.previsao_entrega >= CURDATE() THEN 1 ELSE 0 END) AS pendente,
-    ROUND(
-      SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-               AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
-      * 100, 1
-    ) AS performancePct
-  FROM bexsal_dw.fato_notas fn
-  JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
-  WHERE fn.previsao_entrega IS NOT NULL
-    AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
-    AND fn.unidade_emissora != 'MTZ'
-    AND fn.login != 'maira'
-    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
-    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-  GROUP BY fn.cnpj_pagador, db.emissor_resumido, YEAR(fn.previsao_entrega), MONTH(fn.previsao_entrega)
-  ORDER BY fn.cnpj_pagador, filial, year, month
+    fp.cnpj_pagador                    AS cnpj,
+    db.emissor_resumido                AS filial,
+    YEAR(fp.previsao_entrega_final)    AS year,
+    MONTH(fp.previsao_entrega_final)   AS month,
+    COUNT(*)                           AS totalEntregas,
+    SUM(fp.pontualidade)               AS noPrazo,
+    SUM(CASE WHEN fp.pontualidade = 0 THEN 1 ELSE 0 END) AS foraPrazo,
+    SUM(CASE WHEN fp.data_entrega_final IS NULL THEN 1 ELSE 0 END) AS pendente,
+    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+  FROM bexsal_dw.fato_performance fp
+  JOIN bexsal_dw.dim_bases db ON fp.unidade_receptora = db.sigla
+  WHERE fp.previsao_entrega_final IS NOT NULL
+    AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
+    AND fp.previsao_entrega_final < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fp.cnpj_pagador, db.emissor_resumido, YEAR(fp.previsao_entrega_final), MONTH(fp.previsao_entrega_final)
+  ORDER BY fp.cnpj_pagador, filial, year, month
 `
 
 export const QUERY_DELIVERY_FILIAL_WEEKLY = `
   SELECT
-    fn.cnpj_pagador              AS cnpj,
-    db.emissor_resumido          AS filial,
-    YEAR(fn.previsao_entrega)    AS year,
-    WEEK(fn.previsao_entrega, 3) AS week,
-    COUNT(*)                     AS totalEntregas,
-    SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-             AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END) AS noPrazo,
-    ROUND(
-      SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
-               AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
-      * 100, 1
-    ) AS performancePct
-  FROM bexsal_dw.fato_notas fn
-  JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
-  WHERE fn.previsao_entrega IS NOT NULL
-    AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
-    AND fn.unidade_emissora != 'MTZ'
-    AND fn.login != 'maira'
-    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 12 WEEK)
-    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-  GROUP BY fn.cnpj_pagador, db.emissor_resumido, YEAR(fn.previsao_entrega), WEEK(fn.previsao_entrega, 3)
-  ORDER BY fn.cnpj_pagador, filial, year, week
+    fp.cnpj_pagador                    AS cnpj,
+    db.emissor_resumido                AS filial,
+    YEAR(fp.previsao_entrega_final)    AS year,
+    WEEK(fp.previsao_entrega_final, 3) AS week,
+    COUNT(*)                           AS totalEntregas,
+    SUM(fp.pontualidade)               AS noPrazo,
+    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+  FROM bexsal_dw.fato_performance fp
+  JOIN bexsal_dw.dim_bases db ON fp.unidade_receptora = db.sigla
+  WHERE fp.previsao_entrega_final IS NOT NULL
+    AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 12 WEEK)
+    AND fp.previsao_entrega_final < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fp.cnpj_pagador, db.emissor_resumido, YEAR(fp.previsao_entrega_final), WEEK(fp.previsao_entrega_final, 3)
+  ORDER BY fp.cnpj_pagador, filial, year, week
+`
+
+// Weekly and monthly performance per CNPJ (no filial breakdown) — for sparklines
+export const QUERY_DELIVERY_PERF_WEEKLY = `
+  SELECT
+    fp.cnpj_pagador                    AS cnpj,
+    YEAR(fp.previsao_entrega_final)    AS year,
+    WEEK(fp.previsao_entrega_final, 3) AS week,
+    COUNT(*)                           AS totalEntregas,
+    SUM(fp.pontualidade)               AS noPrazo,
+    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+  FROM bexsal_dw.fato_performance fp
+  WHERE fp.previsao_entrega_final IS NOT NULL
+    AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
+    AND fp.previsao_entrega_final < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fp.cnpj_pagador, YEAR(fp.previsao_entrega_final), WEEK(fp.previsao_entrega_final, 3)
+  ORDER BY fp.cnpj_pagador, year, week
+`
+
+export const QUERY_DELIVERY_PERF_MONTHLY = `
+  SELECT
+    fp.cnpj_pagador                    AS cnpj,
+    YEAR(fp.previsao_entrega_final)    AS year,
+    MONTH(fp.previsao_entrega_final)   AS month,
+    COUNT(*)                           AS totalEntregas,
+    SUM(fp.pontualidade)               AS noPrazo,
+    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+  FROM bexsal_dw.fato_performance fp
+  WHERE fp.previsao_entrega_final IS NOT NULL
+    AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
+    AND fp.previsao_entrega_final < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fp.cnpj_pagador, YEAR(fp.previsao_entrega_final), MONTH(fp.previsao_entrega_final)
+  ORDER BY fp.cnpj_pagador, year, month
 `
 
 export const QUERY_DELIVERY_WEEKLY = `

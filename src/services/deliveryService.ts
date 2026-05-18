@@ -298,7 +298,7 @@ export async function getDeliveryPerformanceWeekly(
   weeks = 12,
 ): Promise<WeeklyPerformance[]> {
   if (cnpjs.length === 0) return []
-  const rows = await prisma.biDeliveryWeekly.findMany({
+  const rows = await prisma.biDeliveryPerfWeekly.findMany({
     where: { cnpj: { in: cnpjs } },
     orderBy: [{ year: 'asc' }, { week: 'asc' }],
   })
@@ -338,11 +338,11 @@ export async function getDeliveryPerformanceWeekly(
 
 export async function getDeliveryPerformanceMonthly(
   cnpjs: string[],
-  months = 3,
+  months = 18,
 ): Promise<MonthlyPerformance[]> {
   if (cnpjs.length === 0) return []
   const now = new Date()
-  const rows = await prisma.biDeliveryMonthly.findMany({
+  const rows = await prisma.biDeliveryPerfMonthly.findMany({
     where: { cnpj: { in: cnpjs } },
     orderBy: [{ year: 'asc' }, { month: 'asc' }],
   })
@@ -374,7 +374,7 @@ export async function getDeliveryPerformanceMonthly(
       monthLabel:     `${MONTH_NAMES[m.month - 1]}/${m.year}`,
       totalEntregas:  m.totalEntregas,
       noPrazo:        m.noPrazo,
-      foraPrazo:      0,
+      foraPrazo:      m.totalEntregas - m.noPrazo,
       pendente:       0,
       performancePct: pct,
       semaforo:       semaforo(pct),

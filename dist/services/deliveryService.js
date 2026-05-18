@@ -215,7 +215,7 @@ async function getDeliveryPerformanceByFilial(cnpjs, _days = 30) {
 async function getDeliveryPerformanceWeekly(cnpjs, weeks = 12) {
     if (cnpjs.length === 0)
         return [];
-    const rows = await prisma_1.prisma.biDeliveryWeekly.findMany({
+    const rows = await prisma_1.prisma.biDeliveryPerfWeekly.findMany({
         where: { cnpj: { in: cnpjs } },
         orderBy: [{ year: 'asc' }, { week: 'asc' }],
     });
@@ -248,11 +248,11 @@ async function getDeliveryPerformanceWeekly(cnpjs, weeks = 12) {
         };
     });
 }
-async function getDeliveryPerformanceMonthly(cnpjs, months = 3) {
+async function getDeliveryPerformanceMonthly(cnpjs, months = 18) {
     if (cnpjs.length === 0)
         return [];
     const now = new Date();
-    const rows = await prisma_1.prisma.biDeliveryMonthly.findMany({
+    const rows = await prisma_1.prisma.biDeliveryPerfMonthly.findMany({
         where: { cnpj: { in: cnpjs } },
         orderBy: [{ year: 'asc' }, { month: 'asc' }],
     });
@@ -280,7 +280,7 @@ async function getDeliveryPerformanceMonthly(cnpjs, months = 3) {
             monthLabel: `${MONTH_NAMES[m.month - 1]}/${m.year}`,
             totalEntregas: m.totalEntregas,
             noPrazo: m.noPrazo,
-            foraPrazo: 0,
+            foraPrazo: m.totalEntregas - m.noPrazo,
             pendente: 0,
             performancePct: pct,
             semaforo: semaforo(pct),
