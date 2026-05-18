@@ -172,8 +172,8 @@ export const QUERY_DELIVERY_PERF = `
     ) AS performancePct
   FROM bexsal_dw.fato_notas fn
   WHERE fn.previsao_entrega IS NOT NULL
-    AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-    AND fn.data_emissao < CURDATE()
+    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
     AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
     AND fn.unidade_emissora != 'MTZ'
     AND fn.login != 'maira'
@@ -200,8 +200,8 @@ export const QUERY_DELIVERY_FILIAL = `
   FROM bexsal_dw.fato_notas fn
   JOIN bexsal_dw.dim_bases db ON LEFT(fn.praca_destino, 3) = db.sigla
   WHERE fn.previsao_entrega IS NOT NULL
-    AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-    AND fn.data_emissao < CURDATE()
+    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
     AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
     AND fn.unidade_emissora != 'MTZ'
     AND fn.login != 'maira'
@@ -210,62 +210,58 @@ export const QUERY_DELIVERY_FILIAL = `
 
 export const QUERY_DELIVERY_WEEKLY = `
   SELECT
-    fn.cnpj_pagador              AS cnpj,
-    YEAR(fn.data_emissao)        AS year,
-    WEEK(fn.data_emissao, 3)     AS week,
-    COUNT(fn.ctrc)               AS totalNotas,
+    fn.cnpj_pagador                   AS cnpj,
+    YEAR(fn.previsao_entrega)         AS year,
+    WEEK(fn.previsao_entrega, 3)      AS week,
+    COUNT(fn.ctrc)                    AS totalNotas,
     ROUND(SUM(fn.valor_mercadoria), 2) AS valorMercadoria,
     ROUND(SUM(fn.valor_frete), 2)      AS valorFrete,
     ROUND(SUM(fn.valor_frete) / NULLIF(SUM(fn.valor_mercadoria), 0) * 100, 4) AS pctNota,
-    SUM(CASE WHEN fn.previsao_entrega IS NOT NULL THEN 1 ELSE 0 END) AS totalEntregas,
-    SUM(CASE WHEN fn.previsao_entrega IS NOT NULL
-             AND fn.data_entrega_realizada IS NOT NULL
+    COUNT(fn.ctrc)                    AS totalEntregas,
+    SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
              AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END) AS noPrazo,
     ROUND(
-      SUM(CASE WHEN fn.previsao_entrega IS NOT NULL
-               AND fn.data_entrega_realizada IS NOT NULL
+      SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
                AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN fn.previsao_entrega IS NOT NULL
-                        AND fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
+      / NULLIF(SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
       * 100, 1
     ) AS performancePct
   FROM bexsal_dw.fato_notas fn
-  WHERE fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
+  WHERE fn.previsao_entrega IS NOT NULL
+    AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
     AND fn.unidade_emissora != 'MTZ'
     AND fn.login != 'maira'
-    AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
-    AND fn.data_emissao < CURDATE()
-  GROUP BY fn.cnpj_pagador, YEAR(fn.data_emissao), WEEK(fn.data_emissao, 3)
+    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
+    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fn.cnpj_pagador, YEAR(fn.previsao_entrega), WEEK(fn.previsao_entrega, 3)
   ORDER BY fn.cnpj_pagador, year, week
 `
 
 export const QUERY_DELIVERY_MONTHLY = `
   SELECT
-    fn.cnpj_pagador              AS cnpj,
-    YEAR(fn.data_emissao)        AS year,
-    MONTH(fn.data_emissao)       AS month,
-    COUNT(fn.ctrc)               AS totalNotas,
+    fn.cnpj_pagador                   AS cnpj,
+    YEAR(fn.previsao_entrega)         AS year,
+    MONTH(fn.previsao_entrega)        AS month,
+    COUNT(fn.ctrc)                    AS totalNotas,
     ROUND(SUM(fn.valor_mercadoria), 2) AS valorMercadoria,
     ROUND(SUM(fn.valor_frete), 2)      AS valorFrete,
     ROUND(SUM(fn.valor_frete) / NULLIF(SUM(fn.valor_mercadoria), 0) * 100, 4) AS pctNota,
-    SUM(CASE WHEN fn.previsao_entrega IS NOT NULL THEN 1 ELSE 0 END) AS totalEntregas,
-    SUM(CASE WHEN fn.previsao_entrega IS NOT NULL
-             AND fn.data_entrega_realizada IS NOT NULL
+    COUNT(fn.ctrc)                    AS totalEntregas,
+    SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
              AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END) AS noPrazo,
     ROUND(
-      SUM(CASE WHEN fn.previsao_entrega IS NOT NULL
-               AND fn.data_entrega_realizada IS NOT NULL
+      SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL
                AND fn.data_entrega_realizada <= fn.previsao_entrega THEN 1 ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN fn.previsao_entrega IS NOT NULL
-                        AND fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
+      / NULLIF(SUM(CASE WHEN fn.data_entrega_realizada IS NOT NULL THEN 1 ELSE 0 END), 0)
       * 100, 1
     ) AS performancePct
   FROM bexsal_dw.fato_notas fn
-  WHERE fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
+  WHERE fn.previsao_entrega IS NOT NULL
+    AND fn.tipo_baixa NOT IN ('LIQU OCOR', 'CANCELADO')
     AND fn.unidade_emissora != 'MTZ'
     AND fn.login != 'maira'
-    AND fn.data_emissao >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
-    AND fn.data_emissao < CURDATE()
-  GROUP BY fn.cnpj_pagador, YEAR(fn.data_emissao), MONTH(fn.data_emissao)
+    AND fn.previsao_entrega >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
+    AND fn.previsao_entrega < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY fn.cnpj_pagador, YEAR(fn.previsao_entrega), MONTH(fn.previsao_entrega)
   ORDER BY fn.cnpj_pagador, year, month
 `
