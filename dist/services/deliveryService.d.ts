@@ -48,10 +48,40 @@ export interface MonthlyPerformance {
     semaforo: 'green' | 'yellow' | 'red' | 'critical' | 'no_data';
     isCurrentMonth: boolean;
 }
+export declare function getDeliveryFilialByWeek(cnpjs: string[], year: number, week: number): Promise<FilialPerformance[]>;
+export declare function getDeliveryFilialByMonth(cnpjs: string[], year: number, month: number): Promise<FilialPerformance[]>;
+export declare function getAvailableFilialPeriods(cnpjs: string[]): Promise<{
+    weeks: {
+        year: number;
+        week: number;
+        label: string;
+    }[];
+    months: {
+        year: number;
+        month: number;
+        label: string;
+    }[];
+}>;
+export declare function getDeliveryFilialWeekly(cnpjs: string[], filial: string, weeks?: number): Promise<WeeklyPerformance[]>;
 export declare function getDeliveryPerformanceBatch(cnpjs: string[], _days?: number): Promise<Record<string, {
     performancePct: number | null;
     semaforo: FilialPerformance['semaforo'];
 }>>;
+export declare function getPerfOverall(cnpjs: string[]): Promise<{
+    totalEntregas: number;
+    noPrazo: number;
+    performancePct: number | null;
+}>;
+export declare function getPerfOverallByMonth(cnpjs: string[], year: number, month: number): Promise<{
+    totalEntregas: number;
+    noPrazo: number;
+    performancePct: number | null;
+}>;
+export declare function getPerfOverallByWeek(cnpjs: string[], year: number, week: number): Promise<{
+    totalEntregas: number;
+    noPrazo: number;
+    performancePct: number | null;
+}>;
 export declare function getDeliveryPerformanceByFilial(cnpjs: string[], _days?: number): Promise<FilialPerformance[]>;
 export declare function getDeliveryPerformanceWeekly(cnpjs: string[], weeks?: number): Promise<WeeklyPerformance[]>;
 export declare function getDeliveryPerformanceMonthly(cnpjs: string[], months?: number): Promise<MonthlyPerformance[]>;

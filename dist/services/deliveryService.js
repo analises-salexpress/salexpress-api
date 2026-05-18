@@ -5,6 +5,9 @@ exports.getDeliveryFilialByMonth = getDeliveryFilialByMonth;
 exports.getAvailableFilialPeriods = getAvailableFilialPeriods;
 exports.getDeliveryFilialWeekly = getDeliveryFilialWeekly;
 exports.getDeliveryPerformanceBatch = getDeliveryPerformanceBatch;
+exports.getPerfOverall = getPerfOverall;
+exports.getPerfOverallByMonth = getPerfOverallByMonth;
+exports.getPerfOverallByWeek = getPerfOverallByWeek;
 exports.getDeliveryPerformanceByFilial = getDeliveryPerformanceByFilial;
 exports.getDeliveryPerformanceWeekly = getDeliveryPerformanceWeekly;
 exports.getDeliveryPerformanceMonthly = getDeliveryPerformanceMonthly;
@@ -195,6 +198,43 @@ async function getDeliveryPerformanceBatch(cnpjs, _days = 30) {
         result[r.cnpj] = { performancePct: r.performancePct, semaforo: semaforo(r.performancePct) };
     }
     return result;
+}
+// Returns correct overall performance from JOIN-free tables (no records dropped by dim_bases)
+async function getPerfOverall(cnpjs) {
+    if (cnpjs.length === 0)
+        return { totalEntregas: 0, noPrazo: 0, performancePct: null };
+    const rows = await prisma_1.prisma.biDeliveryPerf.findMany({ where: { cnpj: { in: cnpjs } } });
+    const totalEntregas = rows.reduce((s, r) => s + r.totalEntregas, 0);
+    const noPrazo = rows.reduce((s, r) => s + r.noPrazo, 0);
+    return {
+        totalEntregas,
+        noPrazo,
+        performancePct: totalEntregas > 0 ? Math.round(noPrazo / totalEntregas * 1000) / 10 : null,
+    };
+}
+async function getPerfOverallByMonth(cnpjs, year, month) {
+    if (cnpjs.length === 0)
+        return { totalEntregas: 0, noPrazo: 0, performancePct: null };
+    const rows = await prisma_1.prisma.biDeliveryPerfMonthly.findMany({ where: { cnpj: { in: cnpjs }, year, month } });
+    const totalEntregas = rows.reduce((s, r) => s + r.totalEntregas, 0);
+    const noPrazo = rows.reduce((s, r) => s + r.noPrazo, 0);
+    return {
+        totalEntregas,
+        noPrazo,
+        performancePct: totalEntregas > 0 ? Math.round(noPrazo / totalEntregas * 1000) / 10 : null,
+    };
+}
+async function getPerfOverallByWeek(cnpjs, year, week) {
+    if (cnpjs.length === 0)
+        return { totalEntregas: 0, noPrazo: 0, performancePct: null };
+    const rows = await prisma_1.prisma.biDeliveryPerfWeekly.findMany({ where: { cnpj: { in: cnpjs }, year, week } });
+    const totalEntregas = rows.reduce((s, r) => s + r.totalEntregas, 0);
+    const noPrazo = rows.reduce((s, r) => s + r.noPrazo, 0);
+    return {
+        totalEntregas,
+        noPrazo,
+        performancePct: totalEntregas > 0 ? Math.round(noPrazo / totalEntregas * 1000) / 10 : null,
+    };
 }
 async function getDeliveryPerformanceByFilial(cnpjs, _days = 30) {
     const rows = await prisma_1.prisma.biDeliveryFilial.findMany({

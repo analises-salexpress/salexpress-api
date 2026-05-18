@@ -271,31 +271,39 @@ router.get('/clients/:id/performance', async (req, res) => {
     const filterYear = req.query.filterYear ? Number(req.query.filterYear) : null;
     const filterWeek = req.query.filterWeek ? Number(req.query.filterWeek) : null;
     const filterMonth = req.query.filterMonth ? Number(req.query.filterMonth) : null;
+    const MONTH_NAMES_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
     let byFilial;
     let filterLabel = null;
+    let overallSource;
     if (filterYear && filterWeek) {
-        byFilial = await (0, deliveryService_1.getDeliveryFilialByWeek)(cnpjs, filterYear, filterWeek);
+        ;
+        [byFilial, overallSource] = await Promise.all([
+            (0, deliveryService_1.getDeliveryFilialByWeek)(cnpjs, filterYear, filterWeek),
+            (0, deliveryService_1.getPerfOverallByWeek)(cnpjs, filterYear, filterWeek),
+        ]);
         filterLabel = `S${String(filterWeek).padStart(2, '0')}/${filterYear}`;
     }
     else if (filterYear && filterMonth) {
-        byFilial = await (0, deliveryService_1.getDeliveryFilialByMonth)(cnpjs, filterYear, filterMonth);
-        const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-        filterLabel = `${MONTH_NAMES[filterMonth - 1]}/${filterYear}`;
+        ;
+        [byFilial, overallSource] = await Promise.all([
+            (0, deliveryService_1.getDeliveryFilialByMonth)(cnpjs, filterYear, filterMonth),
+            (0, deliveryService_1.getPerfOverallByMonth)(cnpjs, filterYear, filterMonth),
+        ]);
+        filterLabel = `${MONTH_NAMES_PT[filterMonth - 1]}/${filterYear}`;
     }
     else {
-        const days = Math.min(Number(req.query.days ?? 90), 180);
-        byFilial = await (0, deliveryService_1.getDeliveryPerformanceByFilial)(cnpjs, days);
+        ;
+        [byFilial, overallSource] = await Promise.all([
+            (0, deliveryService_1.getDeliveryPerformanceByFilial)(cnpjs),
+            (0, deliveryService_1.getPerfOverall)(cnpjs),
+        ]);
     }
     const [weekly, monthly, availablePeriods] = await Promise.all([
         (0, deliveryService_1.getDeliveryPerformanceWeekly)(cnpjs, 12),
         (0, deliveryService_1.getDeliveryPerformanceMonthly)(cnpjs, 18),
         (0, deliveryService_1.getAvailableFilialPeriods)(cnpjs),
     ]);
-    const totalDelivered = byFilial.reduce((s, f) => s + f.noPrazo + f.foraPrazo, 0);
-    const totalNoPrazo = byFilial.reduce((s, f) => s + f.noPrazo, 0);
-    const overallPct = totalDelivered > 0
-        ? Math.round((totalNoPrazo / totalDelivered) * 1000) / 10
-        : null;
+    const overallPct = overallSource.performancePct;
     res.json({
         clientId: client.id,
         cnpj: client.cnpj,
@@ -309,9 +317,9 @@ router.get('/clients/:id/performance', async (req, res) => {
                     : overallPct >= 90 ? 'yellow'
                         : overallPct >= 85 ? 'red'
                             : 'critical',
-            totalEntregas: byFilial.reduce((s, f) => s + f.totalEntregas, 0),
-            noPrazo: totalNoPrazo,
-            foraPrazo: byFilial.reduce((s, f) => s + f.foraPrazo, 0),
+            totalEntregas: overallSource.totalEntregas,
+            noPrazo: overallSource.noPrazo,
+            foraPrazo: overallSource.totalEntregas - overallSource.noPrazo,
         },
         byFilial,
         weekly,
