@@ -8,6 +8,10 @@ import {
   QUERY_CLIENT_WEEKLY,
   QUERY_CLIENT_DAILY,
   QUERY_ALL_ROUTES,
+  QUERY_DELIVERY_PERF,
+  QUERY_DELIVERY_FILIAL,
+  QUERY_DELIVERY_WEEKLY,
+  QUERY_DELIVERY_MONTHLY,
 } from './queries'
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -202,6 +206,78 @@ async function cleanStaleRoutes(syncStart: string) {
   log(`  → ${total} stale route/weekly rows removed`)
 }
 
+async function syncDeliveryPerf(conn: mysql.Connection) {
+  log('Syncing bi_delivery_perf…')
+  const [rows] = await conn.query(QUERY_DELIVERY_PERF)
+  const data = (rows as any[]).map((r) => ({
+    cnpj:           r.cnpj,
+    performance_pct: r.performancePct !== null ? Number(r.performancePct) : null,
+    total_entregas:  Number(r.totalEntregas ?? 0),
+    no_prazo:        Number(r.noPrazo ?? 0),
+    synced_at:       new Date().toISOString(),
+  }))
+  const n = await upsert('bi_delivery_perf', data, ['cnpj'])
+  log(`  → ${n} delivery perf rows upserted`)
+}
+
+async function syncDeliveryFilial(conn: mysql.Connection) {
+  log('Syncing bi_delivery_filial…')
+  const [rows] = await conn.query(QUERY_DELIVERY_FILIAL)
+  const data = (rows as any[]).map((r) => ({
+    cnpj:            r.cnpj,
+    filial:          r.filial,
+    cidade:          r.cidade ?? null,
+    total_entregas:  Number(r.totalEntregas ?? 0),
+    no_prazo:        Number(r.noPrazo ?? 0),
+    fora_prazo:      Number(r.foraPrazo ?? 0),
+    pendente:        Number(r.pendente ?? 0),
+    performance_pct: r.performancePct !== null ? Number(r.performancePct) : null,
+    synced_at:       new Date().toISOString(),
+  }))
+  const n = await upsert('bi_delivery_filial', data, ['cnpj', 'filial'])
+  log(`  → ${n} delivery filial rows upserted`)
+}
+
+async function syncDeliveryWeekly(conn: mysql.Connection) {
+  log('Syncing bi_delivery_weekly…')
+  const [rows] = await conn.query(QUERY_DELIVERY_WEEKLY)
+  const data = (rows as any[]).map((r) => ({
+    cnpj:             r.cnpj,
+    year:             Number(r.year),
+    week:             Number(r.week),
+    total_notas:      Number(r.totalNotas ?? 0),
+    valor_mercadoria: Number(r.valorMercadoria ?? 0),
+    valor_frete:      Number(r.valorFrete ?? 0),
+    pct_nota:         r.pctNota !== null ? Number(r.pctNota) : null,
+    total_entregas:   Number(r.totalEntregas ?? 0),
+    no_prazo:         Number(r.noPrazo ?? 0),
+    performance_pct:  r.performancePct !== null ? Number(r.performancePct) : null,
+    synced_at:        new Date().toISOString(),
+  }))
+  const n = await upsert('bi_delivery_weekly', data, ['cnpj', 'year', 'week'])
+  log(`  → ${n} delivery weekly rows upserted`)
+}
+
+async function syncDeliveryMonthly(conn: mysql.Connection) {
+  log('Syncing bi_delivery_monthly…')
+  const [rows] = await conn.query(QUERY_DELIVERY_MONTHLY)
+  const data = (rows as any[]).map((r) => ({
+    cnpj:             r.cnpj,
+    year:             Number(r.year),
+    month:            Number(r.month),
+    total_notas:      Number(r.totalNotas ?? 0),
+    valor_mercadoria: Number(r.valorMercadoria ?? 0),
+    valor_frete:      Number(r.valorFrete ?? 0),
+    pct_nota:         r.pctNota !== null ? Number(r.pctNota) : null,
+    total_entregas:   Number(r.totalEntregas ?? 0),
+    no_prazo:         Number(r.noPrazo ?? 0),
+    performance_pct:  r.performancePct !== null ? Number(r.performancePct) : null,
+    synced_at:        new Date().toISOString(),
+  }))
+  const n = await upsert('bi_delivery_monthly', data, ['cnpj', 'year', 'month'])
+  log(`  → ${n} delivery monthly rows upserted`)
+}
+
 async function cleanStaleClients(syncStart: string) {
   log('Cleaning stale clients…')
   let totalRemoved = 0
@@ -257,6 +333,10 @@ async function main() {
     await syncClientWeekly(conn)
     await syncClientDaily(conn)
     await syncAllRoutes(conn)
+    await syncDeliveryPerf(conn)
+    await syncDeliveryFilial(conn)
+    await syncDeliveryWeekly(conn)
+    await syncDeliveryMonthly(conn)
     await cleanOldDaily()
     await cleanStaleRoutes(syncStart)
     await cleanStaleClients(syncStart)

@@ -48,12 +48,12 @@ export interface MonthlyPerformance {
     semaforo: 'green' | 'yellow' | 'red' | 'critical' | 'no_data';
     isCurrentMonth: boolean;
 }
-export declare function getDeliveryPerformanceByFilial(cnpjs: string[], days?: number): Promise<FilialPerformance[]>;
-export declare function getDeliveryPerformanceWeekly(cnpjs: string[], weeks?: number): Promise<WeeklyPerformance[]>;
-export declare function getDeliveryPerformanceMonthly(cnpjs: string[], months?: number): Promise<MonthlyPerformance[]>;
-export declare function getDeliveryPerformanceBatch(cnpjs: string[], days?: number): Promise<Record<string, {
+export declare function getDeliveryPerformanceBatch(cnpjs: string[], _days?: number): Promise<Record<string, {
     performancePct: number | null;
     semaforo: FilialPerformance['semaforo'];
 }>>;
+export declare function getDeliveryPerformanceByFilial(cnpjs: string[], _days?: number): Promise<FilialPerformance[]>;
+export declare function getDeliveryPerformanceWeekly(cnpjs: string[], weeks?: number): Promise<WeeklyPerformance[]>;
+export declare function getDeliveryPerformanceMonthly(cnpjs: string[], months?: number): Promise<MonthlyPerformance[]>;
 export declare function getExpansionPresentationWeekly(cnpjs: string[], startDate: Date): Promise<ExpansionWeekData[]>;
 export declare function getExpansionPresentationMonthly(cnpjs: string[], startDate: Date): Promise<ExpansionMonthData[]>;

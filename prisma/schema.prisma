@@ -306,6 +306,73 @@ model BiAllRoute {
   @@map("bi_all_routes")
 }
 
+// ───── Performance de Entrega (sincronizado pelo sync-agent) ─────────────────
+
+model BiDeliveryPerf {
+  cnpj           String   @id
+  performancePct Float?   @map("performance_pct")
+  totalEntregas  Int      @default(0) @map("total_entregas")
+  noPrazo        Int      @default(0) @map("no_prazo")
+  syncedAt       DateTime @default(now()) @map("synced_at")
+
+  @@map("bi_delivery_perf")
+}
+
+model BiDeliveryFilial {
+  id             Int      @id @default(autoincrement())
+  cnpj           String
+  filial         String
+  cidade         String?
+  performancePct Float?   @map("performance_pct")
+  totalEntregas  Int      @default(0) @map("total_entregas")
+  noPrazo        Int      @default(0) @map("no_prazo")
+  foraPrazo      Int      @default(0) @map("fora_prazo")
+  pendente       Int      @default(0)
+  syncedAt       DateTime @default(now()) @map("synced_at")
+
+  @@unique([cnpj, filial])
+  @@index([cnpj])
+  @@map("bi_delivery_filial")
+}
+
+model BiDeliveryWeekly {
+  id              Int      @id @default(autoincrement())
+  cnpj            String
+  year            Int
+  week            Int
+  totalNotas      Int      @default(0) @map("total_notas")
+  valorMercadoria Float    @default(0) @map("valor_mercadoria")
+  valorFrete      Float    @default(0) @map("valor_frete")
+  pctNota         Float?   @map("pct_nota")
+  totalEntregas   Int      @default(0) @map("total_entregas")
+  noPrazo         Int      @default(0) @map("no_prazo")
+  performancePct  Float?   @map("performance_pct")
+  syncedAt        DateTime @default(now()) @map("synced_at")
+
+  @@unique([cnpj, year, week])
+  @@index([cnpj])
+  @@map("bi_delivery_weekly")
+}
+
+model BiDeliveryMonthly {
+  id              Int      @id @default(autoincrement())
+  cnpj            String
+  year            Int
+  month           Int
+  totalNotas      Int      @default(0) @map("total_notas")
+  valorMercadoria Float    @default(0) @map("valor_mercadoria")
+  valorFrete      Float    @default(0) @map("valor_frete")
+  pctNota         Float?   @map("pct_nota")
+  totalEntregas   Int      @default(0) @map("total_entregas")
+  noPrazo         Int      @default(0) @map("no_prazo")
+  performancePct  Float?   @map("performance_pct")
+  syncedAt        DateTime @default(now()) @map("synced_at")
+
+  @@unique([cnpj, year, month])
+  @@index([cnpj])
+  @@map("bi_delivery_monthly")
+}
+
 // ───── HyperCare ─────────────────────────────────────────────────────────────
 
 enum HypercareStatus {
