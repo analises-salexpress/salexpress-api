@@ -121,6 +121,39 @@ router.post('/clients', async (req, res) => {
     });
     res.status(201).json(client);
 });
+// GET /hypercare/clients/:id
+router.get('/clients/:id', async (req, res) => {
+    const client = await prisma_1.prisma.hypercareClient.findUnique({
+        where: { id: req.params.id },
+        include: {
+            enrolledBy: { select: { id: true, name: true } },
+            additionalCnpjs: { select: { id: true, cnpj: true, name: true } },
+            _count: { select: { touchpoints: true, meetings: true } },
+        },
+    });
+    if (!client) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+    }
+    const cnpjs = [client.cnpj, ...client.additionalCnpjs.map((a) => a.cnpj)];
+    const [perfMap, biData] = await Promise.all([
+        (0, deliveryService_1.getDeliveryPerformanceBatch)(cnpjs),
+        prisma_1.prisma.biClient.findUnique({
+            where: { cnpj: client.cnpj },
+            select: { city: true, state: true, segment: true, curve: true },
+        }),
+    ]);
+    const perf = perfMap[client.cnpj] ?? { performancePct: null, semaforo: 'no_data' };
+    res.json({
+        ...client,
+        performance: perf,
+        performancePct: perf.performancePct,
+        semaforo: perf.semaforo,
+        city: biData?.city ?? null,
+        state: biData?.state ?? null,
+        segment: biData?.segment ?? null,
+    });
+});
 // PUT /hypercare/clients/:id
 router.put('/clients/:id', async (req, res) => {
     const schema = zod_1.z.object({
@@ -148,8 +181,8 @@ router.put('/clients/:id', async (req, res) => {
     });
     res.json(updated);
 });
-// DELETE /hypercare/clients/:id (manager only)
-router.delete('/clients/:id', (0, roles_1.requireRole)(client_1.Role.MANAGER), async (req, res) => {
+// DELETE /hypercare/clients/:id
+router.delete('/clients/:id', async (req, res) => {
     const client = await prisma_1.prisma.hypercareClient.findUnique({ where: { id: req.params.id } });
     if (!client) {
         res.status(404).json({ error: 'Not found' });
