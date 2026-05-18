@@ -12,6 +12,6 @@ export const biPool = mysql.createPool({
 })
 
 export async function queryBI<T = unknown>(sql: string, params?: (string | number | boolean | null)[]): Promise<T[]> {
-  const [rows] = await biPool.execute(sql, params)
+  const [rows] = await biPool.query(sql, params)
   return rows as T[]
 }

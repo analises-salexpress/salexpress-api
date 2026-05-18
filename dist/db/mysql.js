@@ -17,7 +17,7 @@ exports.biPool = promise_1.default.createPool({
     queueLimit: 0,
 });
 async function queryBI(sql, params) {
-    const [rows] = await exports.biPool.execute(sql, params);
+    const [rows] = await exports.biPool.query(sql, params);
     return rows;
 }
 //# sourceMappingURL=mysql.js.map
