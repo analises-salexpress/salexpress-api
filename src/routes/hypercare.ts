@@ -19,11 +19,13 @@ router.use(authenticate)
 // GET /hypercare/diag/performance/:cnpj
 router.get('/diag/performance/:cnpj', async (req: AuthenticatedRequest, res) => {
   const cnpj = req.params.cnpj.replace(/\D/g, '')
-  const [p90, p30] = await Promise.all([
-    getDeliveryPerformanceBatch([cnpj], 90),
-    getDeliveryPerformanceBatch([cnpj], 30),
-  ])
-  res.json({ cnpj, last30days: p30[cnpj] ?? null, last90days: p90[cnpj] ?? null })
+  try {
+    const p30 = await getDeliveryPerformanceBatch([cnpj], 30)
+    const p90 = await getDeliveryPerformanceBatch([cnpj], 90)
+    res.json({ cnpj, last30days: p30[cnpj] ?? null, last90days: p90[cnpj] ?? null })
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? String(e), stack: e?.stack?.split('\n').slice(0, 5) })
+  }
 })
 
 // ── CNPJ Lookup (busca no BI antes de cadastrar) ──────────────────────────────
