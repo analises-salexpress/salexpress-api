@@ -73,17 +73,14 @@ router.get('/clients', async (req: AuthenticatedRequest, res) => {
   // Collect all CNPJs (main + additional) per client for batch performance
   const allCnpjsPerClient = clients.map((c) => [c.cnpj, ...c.additionalCnpjs.map((a) => a.cnpj)])
   const uniqueCnpjs = [...new Set(allCnpjsPerClient.flat())]
-  const perfMap = await getDeliveryPerformanceBatch(uniqueCnpjs, 30)
+  let perfMap: Awaited<ReturnType<typeof getDeliveryPerformanceBatch>> = {}
+  try {
+    perfMap = await getDeliveryPerformanceBatch(uniqueCnpjs, 30)
+  } catch {
+    // BI unavailable — list still returns without performance data
+  }
 
-  const data = clients.map((c, i) => {
-    const cnpjs = allCnpjsPerClient[i]
-    const delivered = cnpjs.reduce((s, cnpj) => {
-      const p = perfMap[cnpj]
-      return p ? s : s
-    }, 0)
-    // Aggregate performance across all CNPJs of this client
-    // We use the batch which returns per-cnpj; we need a combined value
-    // Will be computed precisely in the /performance endpoint; here show main cnpj
+  const data = clients.map((c) => {
     const perf = perfMap[c.cnpj] ?? { performancePct: null, semaforo: 'no_data' as const }
     return { ...c, performance: perf }
   })
@@ -488,7 +485,12 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res) => {
   const allUniqueCnpjs = [
     ...new Set(activeClients.flatMap((c) => [c.cnpj, ...c.additionalCnpjs.map((a) => a.cnpj)])),
   ]
-  const perfMap = await getDeliveryPerformanceBatch(allUniqueCnpjs, 30)
+  let perfMap: Awaited<ReturnType<typeof getDeliveryPerformanceBatch>> = {}
+  try {
+    perfMap = await getDeliveryPerformanceBatch(allUniqueCnpjs, 30)
+  } catch {
+    // BI unavailable — dashboard still returns without performance data
+  }
 
   const clients = activeClients.map((c) => ({
     ...c,
