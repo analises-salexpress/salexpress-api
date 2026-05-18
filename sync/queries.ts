@@ -157,15 +157,25 @@ export const QUERY_ALL_ROUTES = `
 `
 
 // ── Delivery performance — all queries use fato_performance (official KPI model)
-// KPI = SUM(pontualidade) / COUNT(*) where pontualidade=1 means NO PRAZO or PENDENTE NO PRAZO
-// Reference: PT_BEX_INDICADORES_PERFORMANCE_GLOBAL (official BI documentation)
+// KPI formula: (entregue no prazo + pendente ainda dentro do prazo) / total
+//   noPrazo  = data_entrega_final <= previsao_entrega_final
+//              OR (data_entrega_final IS NULL AND previsao_entrega_final >= CURDATE())
+//   foraPrazo = data_entrega_final > previsao_entrega_final
+//              OR (data_entrega_final IS NULL AND previsao_entrega_final < CURDATE())
+// NOTE: pontualidade field is NOT a 0/1 flag — ignore it entirely
 
 export const QUERY_DELIVERY_PERF = `
   SELECT
     fp.cnpj_pagador AS cnpj,
     COUNT(*) AS totalEntregas,
-    SUM(fp.pontualidade) AS noPrazo,
-    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+         THEN 1 END) AS noPrazo,
+    ROUND(
+      COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                   OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+           THEN 1 END) / NULLIF(COUNT(*), 0) * 100, 1
+    ) AS performancePct
   FROM bexsal_dw.fato_performance fp
   WHERE fp.previsao_entrega_final IS NOT NULL
     AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
@@ -179,10 +189,18 @@ export const QUERY_DELIVERY_FILIAL = `
     db.emissor_resumido AS filial,
     MAX(db.cidade) AS cidade,
     COUNT(*) AS totalEntregas,
-    SUM(fp.pontualidade) AS noPrazo,
-    SUM(CASE WHEN fp.pontualidade = 0 THEN 1 ELSE 0 END) AS foraPrazo,
-    SUM(CASE WHEN fp.data_entrega_final IS NULL THEN 1 ELSE 0 END) AS pendente,
-    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+         THEN 1 END) AS noPrazo,
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final <  CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final >  fp.previsao_entrega_final)
+         THEN 1 END) AS foraPrazo,
+    COUNT(CASE WHEN fp.data_entrega_final IS NULL THEN 1 END) AS pendente,
+    ROUND(
+      COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                   OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+           THEN 1 END) / NULLIF(COUNT(*), 0) * 100, 1
+    ) AS performancePct
   FROM bexsal_dw.fato_performance fp
   JOIN bexsal_dw.dim_bases db ON fp.unidade_receptora = db.sigla
   WHERE fp.previsao_entrega_final IS NOT NULL
@@ -198,10 +216,18 @@ export const QUERY_DELIVERY_FILIAL_MONTHLY = `
     YEAR(fp.previsao_entrega_final)    AS year,
     MONTH(fp.previsao_entrega_final)   AS month,
     COUNT(*)                           AS totalEntregas,
-    SUM(fp.pontualidade)               AS noPrazo,
-    SUM(CASE WHEN fp.pontualidade = 0 THEN 1 ELSE 0 END) AS foraPrazo,
-    SUM(CASE WHEN fp.data_entrega_final IS NULL THEN 1 ELSE 0 END) AS pendente,
-    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+         THEN 1 END) AS noPrazo,
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final <  CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final >  fp.previsao_entrega_final)
+         THEN 1 END) AS foraPrazo,
+    COUNT(CASE WHEN fp.data_entrega_final IS NULL THEN 1 END) AS pendente,
+    ROUND(
+      COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                   OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+           THEN 1 END) / NULLIF(COUNT(*), 0) * 100, 1
+    ) AS performancePct
   FROM bexsal_dw.fato_performance fp
   JOIN bexsal_dw.dim_bases db ON fp.unidade_receptora = db.sigla
   WHERE fp.previsao_entrega_final IS NOT NULL
@@ -218,8 +244,14 @@ export const QUERY_DELIVERY_FILIAL_WEEKLY = `
     YEAR(fp.previsao_entrega_final)    AS year,
     WEEK(fp.previsao_entrega_final, 3) AS week,
     COUNT(*)                           AS totalEntregas,
-    SUM(fp.pontualidade)               AS noPrazo,
-    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+         THEN 1 END) AS noPrazo,
+    ROUND(
+      COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                   OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+           THEN 1 END) / NULLIF(COUNT(*), 0) * 100, 1
+    ) AS performancePct
   FROM bexsal_dw.fato_performance fp
   JOIN bexsal_dw.dim_bases db ON fp.unidade_receptora = db.sigla
   WHERE fp.previsao_entrega_final IS NOT NULL
@@ -236,8 +268,14 @@ export const QUERY_DELIVERY_PERF_WEEKLY = `
     YEAR(fp.previsao_entrega_final)    AS year,
     WEEK(fp.previsao_entrega_final, 3) AS week,
     COUNT(*)                           AS totalEntregas,
-    SUM(fp.pontualidade)               AS noPrazo,
-    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+         THEN 1 END) AS noPrazo,
+    ROUND(
+      COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                   OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+           THEN 1 END) / NULLIF(COUNT(*), 0) * 100, 1
+    ) AS performancePct
   FROM bexsal_dw.fato_performance fp
   WHERE fp.previsao_entrega_final IS NOT NULL
     AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
@@ -252,8 +290,14 @@ export const QUERY_DELIVERY_PERF_MONTHLY = `
     YEAR(fp.previsao_entrega_final)    AS year,
     MONTH(fp.previsao_entrega_final)   AS month,
     COUNT(*)                           AS totalEntregas,
-    SUM(fp.pontualidade)               AS noPrazo,
-    ROUND(SUM(fp.pontualidade) / NULLIF(COUNT(*), 0) * 100, 1) AS performancePct
+    COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                 OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+         THEN 1 END) AS noPrazo,
+    ROUND(
+      COUNT(CASE WHEN (fp.data_entrega_final IS NULL     AND fp.previsao_entrega_final >= CURDATE())
+                   OR (fp.data_entrega_final IS NOT NULL AND fp.data_entrega_final <= fp.previsao_entrega_final)
+           THEN 1 END) / NULLIF(COUNT(*), 0) * 100, 1
+    ) AS performancePct
   FROM bexsal_dw.fato_performance fp
   WHERE fp.previsao_entrega_final IS NOT NULL
     AND fp.previsao_entrega_final >= DATE_SUB(CURDATE(), INTERVAL 18 MONTH)
