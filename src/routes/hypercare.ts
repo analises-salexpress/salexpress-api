@@ -15,6 +15,17 @@ import {
 const router = Router()
 router.use(authenticate)
 
+// ── Diagnóstico de performance (dev only) ────────────────────────────────────
+// GET /hypercare/diag/performance/:cnpj
+router.get('/diag/performance/:cnpj', async (req: AuthenticatedRequest, res) => {
+  const cnpj = req.params.cnpj.replace(/\D/g, '')
+  const [p90, p30] = await Promise.all([
+    getDeliveryPerformanceBatch([cnpj], 90),
+    getDeliveryPerformanceBatch([cnpj], 30),
+  ])
+  res.json({ cnpj, last30days: p30[cnpj] ?? null, last90days: p90[cnpj] ?? null })
+})
+
 // ── CNPJ Lookup (busca no BI antes de cadastrar) ──────────────────────────────
 
 // GET /hypercare/lookup?cnpj=12345678000195
@@ -70,19 +81,24 @@ router.get('/clients', async (req: AuthenticatedRequest, res) => {
     },
   })
 
-  // Collect all CNPJs (main + additional) per client for batch performance
+  // Collect all CNPJs for batch BI query and city lookup
   const allCnpjsPerClient = clients.map((c) => [c.cnpj, ...c.additionalCnpjs.map((a) => a.cnpj)])
   const uniqueCnpjs = [...new Set(allCnpjsPerClient.flat())]
-  let perfMap: Awaited<ReturnType<typeof getDeliveryPerformanceBatch>> = {}
-  try {
-    perfMap = await getDeliveryPerformanceBatch(uniqueCnpjs, 30)
-  } catch {
-    // BI unavailable — list still returns without performance data
-  }
+
+  const [perfMap, biClients] = await Promise.all([
+    getDeliveryPerformanceBatch(uniqueCnpjs, 90),
+    prisma.biClient.findMany({
+      where: { cnpj: { in: clients.map((c) => c.cnpj) } },
+      select: { cnpj: true, city: true, state: true },
+    }),
+  ])
+
+  const biMap = Object.fromEntries(biClients.map((b) => [b.cnpj, b]))
 
   const data = clients.map((c) => {
     const perf = perfMap[c.cnpj] ?? { performancePct: null, semaforo: 'no_data' as const }
-    return { ...c, performance: perf }
+    const bi   = biMap[c.cnpj]
+    return { ...c, performance: perf, city: bi?.city ?? null, state: bi?.state ?? null }
   })
 
   res.json(data)
