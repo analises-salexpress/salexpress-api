@@ -524,6 +524,150 @@ router.delete('/action-items/:id', requireRole(Role.MANAGER), async (req, res) =
   res.status(204).send()
 })
 
+// ── Filial Flags ──────────────────────────────────────────────────────────────
+
+// GET /hypercare/clients/:id/filial-flags
+// Retorna filiais flagadas do cliente, enriquecidas com dados de performance atual
+router.get('/clients/:id/filial-flags', async (req: AuthenticatedRequest, res) => {
+  const client = await prisma.hypercareClient.findUnique({
+    where: { id: req.params.id },
+    include: { additionalCnpjs: { select: { cnpj: true } } },
+  })
+  if (!client) { res.status(404).json({ error: 'Not found' }); return }
+
+  const flags = await prisma.hypercareFilialFlag.findMany({
+    where: { clientId: req.params.id },
+    include: {
+      flaggedBy: { select: { id: true, name: true } },
+      actions: {
+        orderBy: { createdAt: 'asc' },
+        include: { createdBy: { select: { id: true, name: true } } },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  // Enriquecer com performance atual da filial
+  const allCnpjs = [client.cnpj, ...client.additionalCnpjs.map((a) => a.cnpj)]
+  const filialPerf = await prisma.biDeliveryFilial.findMany({
+    where: { cnpj: { in: allCnpjs } },
+  })
+  const perfMap = new Map(filialPerf.map((f) => [f.filial, f]))
+
+  const enriched = flags.map((flag) => ({
+    ...flag,
+    currentPerf: perfMap.get(flag.filial) ?? null,
+  }))
+
+  res.json(enriched)
+})
+
+// POST /hypercare/clients/:id/filial-flags
+router.post('/clients/:id/filial-flags', async (req: AuthenticatedRequest, res) => {
+  const schema = z.object({
+    filial: z.string().min(1),
+    note:   z.string().optional(),
+  })
+  const body = schema.safeParse(req.body)
+  if (!body.success) { res.status(400).json({ error: body.error.flatten() }); return }
+
+  const client = await prisma.hypercareClient.findUnique({ where: { id: req.params.id } })
+  if (!client) { res.status(404).json({ error: 'Not found' }); return }
+
+  try {
+    const flag = await prisma.hypercareFilialFlag.create({
+      data: {
+        clientId:    req.params.id,
+        filial:      body.data.filial,
+        note:        body.data.note ?? null,
+        flaggedById: req.user!.userId,
+      },
+      include: {
+        flaggedBy: { select: { id: true, name: true } },
+        actions:   true,
+      },
+    })
+    res.status(201).json(flag)
+  } catch {
+    res.status(409).json({ error: 'Filial já está flagada para este cliente' })
+  }
+})
+
+// DELETE /hypercare/clients/:id/filial-flags/:filial
+router.delete('/clients/:id/filial-flags/:filial', async (req: AuthenticatedRequest, res) => {
+  const client = await prisma.hypercareClient.findUnique({ where: { id: req.params.id } })
+  if (!client) { res.status(404).json({ error: 'Not found' }); return }
+
+  await prisma.hypercareFilialFlag.deleteMany({
+    where: { clientId: req.params.id, filial: decodeURIComponent(req.params.filial) },
+  })
+  res.status(204).send()
+})
+
+// ── Filial Actions ─────────────────────────────────────────────────────────────
+
+const filialActionSchema = z.object({
+  description: z.string().min(1),
+  responsible: z.string().min(1),
+  dueDate:     z.string().datetime().nullable().optional(),
+})
+
+// POST /hypercare/filial-flags/:flagId/actions
+router.post('/filial-flags/:flagId/actions', async (req: AuthenticatedRequest, res) => {
+  const body = filialActionSchema.safeParse(req.body)
+  if (!body.success) { res.status(400).json({ error: body.error.flatten() }); return }
+
+  const flag = await prisma.hypercareFilialFlag.findUnique({ where: { id: req.params.flagId } })
+  if (!flag) { res.status(404).json({ error: 'Flag not found' }); return }
+
+  const action = await prisma.hypercareFilialAction.create({
+    data: {
+      flagId:      req.params.flagId,
+      description: body.data.description,
+      responsible: body.data.responsible,
+      dueDate:     body.data.dueDate ? new Date(body.data.dueDate) : null,
+      createdById: req.user!.userId,
+    },
+    include: { createdBy: { select: { id: true, name: true } } },
+  })
+  res.status(201).json(action)
+})
+
+// PUT /hypercare/filial-actions/:id
+router.put('/filial-actions/:id', async (req: AuthenticatedRequest, res) => {
+  const schema = z.object({
+    status:      z.nativeEnum(ActionItemStatus).optional(),
+    description: z.string().optional(),
+    responsible: z.string().optional(),
+    dueDate:     z.string().datetime().nullable().optional(),
+  })
+  const body = schema.safeParse(req.body)
+  if (!body.success) { res.status(400).json({ error: body.error.flatten() }); return }
+
+  const action = await prisma.hypercareFilialAction.findUnique({ where: { id: req.params.id } })
+  if (!action) { res.status(404).json({ error: 'Not found' }); return }
+
+  const updated = await prisma.hypercareFilialAction.update({
+    where: { id: req.params.id },
+    data: {
+      ...body.data,
+      dueDate: body.data.dueDate !== undefined
+        ? (body.data.dueDate ? new Date(body.data.dueDate) : null)
+        : undefined,
+    },
+    include: { createdBy: { select: { id: true, name: true } } },
+  })
+  res.json(updated)
+})
+
+// DELETE /hypercare/filial-actions/:id
+router.delete('/filial-actions/:id', async (req: AuthenticatedRequest, res) => {
+  const action = await prisma.hypercareFilialAction.findUnique({ where: { id: req.params.id } })
+  if (!action) { res.status(404).json({ error: 'Not found' }); return }
+  await prisma.hypercareFilialAction.delete({ where: { id: req.params.id } })
+  res.status(204).send()
+})
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 router.get('/dashboard', async (req: AuthenticatedRequest, res) => {

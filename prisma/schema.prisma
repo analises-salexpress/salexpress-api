@@ -54,9 +54,11 @@ model User {
   uploadedFiles        File[]
   expansionGoals       ExpansionGoal[]
   refreshTokens        RefreshToken[]
-  hypercareClients     HypercareClient[]
-  hypercareTouchpoints HypercareTouchpoint[]
-  hypercareMeetings    HypercareMeeting[]
+  hypercareClients      HypercareClient[]
+  hypercareTouchpoints  HypercareTouchpoint[]
+  hypercareMeetings     HypercareMeeting[]
+  hypercareFilialFlags  HypercareFilialFlag[]
+  hypercareFilialActions HypercareFilialAction[]
 }
 
 model KanbanCard {
@@ -416,6 +418,7 @@ model HypercareClient {
   touchpoints     HypercareTouchpoint[]
   meetings        HypercareMeeting[]
   additionalCnpjs HypercareClientCnpj[]
+  filialFlags     HypercareFilialFlag[]
 
   @@index([cnpj])
   @@index([status])
@@ -485,4 +488,39 @@ model HypercareActionItem {
 
   @@index([meetingId])
   @@map("hypercare_action_items")
+}
+
+model HypercareFilialFlag {
+  id          String   @id @default(cuid())
+  clientId    String
+  filial      String
+  note        String?  @db.Text
+  flaggedById String
+  createdAt   DateTime @default(now())
+
+  client    HypercareClient        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  flaggedBy User                   @relation(fields: [flaggedById], references: [id])
+  actions   HypercareFilialAction[]
+
+  @@unique([clientId, filial])
+  @@index([clientId])
+  @@map("hypercare_filial_flags")
+}
+
+model HypercareFilialAction {
+  id          String           @id @default(cuid())
+  flagId      String
+  description String           @db.Text
+  responsible String
+  dueDate     DateTime?
+  status      ActionItemStatus @default(OPEN)
+  createdById String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  flag      HypercareFilialFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  createdBy User                @relation(fields: [createdById], references: [id])
+
+  @@index([flagId])
+  @@map("hypercare_filial_actions")
 }
