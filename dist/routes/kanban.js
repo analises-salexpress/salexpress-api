@@ -1,4 +1,7 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const zod_1 = require("zod");
@@ -7,6 +10,8 @@ const roles_1 = require("../middleware/roles");
 const prisma_1 = require("../db/prisma");
 const client_1 = require("@prisma/client");
 const analyticsService_1 = require("../services/analyticsService");
+const deliveryService_1 = require("../services/deliveryService");
+const exceljs_1 = __importDefault(require("exceljs"));
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate);
 // ── Cards ─────────────────────────────────────────────────────────────────────
@@ -285,6 +290,117 @@ router.delete('/notes/:noteId', async (req, res) => {
     }
     await prisma_1.prisma.kanbanNote.delete({ where: { id: req.params.noteId } });
     res.status(204).send();
+});
+// ── Apresentação de Expansão ──────────────────────────────────────────────────
+async function getCardCnpjs(cardId) {
+    const card = await prisma_1.prisma.kanbanCard.findUnique({
+        where: { id: cardId },
+        include: { additionalCnpjs: { select: { cnpj: true } } },
+    });
+    if (!card)
+        return null;
+    return {
+        cnpjs: [card.clientId, ...card.additionalCnpjs.map((a) => a.cnpj)],
+        clientName: card.clientName,
+    };
+}
+// GET /kanban/cards/:id/expansion-presentation
+router.get('/cards/:id/expansion-presentation', async (req, res) => {
+    const cardData = await getCardCnpjs(req.params.id);
+    if (!cardData) {
+        res.status(404).json({ error: 'Card not found' });
+        return;
+    }
+    const goal = await prisma_1.prisma.expansionGoal.findFirst({
+        where: { cardId: req.params.id, status: 'ACTIVE' },
+        orderBy: { startDate: 'asc' },
+    });
+    // Default: 6 months back if no goal
+    const startDate = goal?.startDate ?? new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+    const [weekly, monthly] = await Promise.all([
+        (0, deliveryService_1.getExpansionPresentationWeekly)(cardData.cnpjs, startDate),
+        (0, deliveryService_1.getExpansionPresentationMonthly)(cardData.cnpjs, startDate),
+    ]);
+    res.json({
+        clientName: cardData.clientName,
+        cnpjs: cardData.cnpjs,
+        startDate: startDate.toISOString(),
+        baselineAvg: goal?.baselineAvg ?? null,
+        weekly,
+        monthly,
+    });
+});
+// GET /kanban/cards/:id/expansion-presentation/export
+router.get('/cards/:id/expansion-presentation/export', async (req, res) => {
+    const cardData = await getCardCnpjs(req.params.id);
+    if (!cardData) {
+        res.status(404).json({ error: 'Card not found' });
+        return;
+    }
+    const goal = await prisma_1.prisma.expansionGoal.findFirst({
+        where: { cardId: req.params.id, status: 'ACTIVE' },
+        orderBy: { startDate: 'asc' },
+    });
+    const startDate = goal?.startDate ?? new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+    const baselineAvg = goal?.baselineAvg ?? null;
+    const [weekly, monthly] = await Promise.all([
+        (0, deliveryService_1.getExpansionPresentationWeekly)(cardData.cnpjs, startDate),
+        (0, deliveryService_1.getExpansionPresentationMonthly)(cardData.cnpjs, startDate),
+    ]);
+    const wb = new exceljs_1.default.Workbook();
+    wb.creator = 'Sal Express';
+    wb.created = new Date();
+    // ── Sheet 1: Semana a Semana ──
+    const ws1 = wb.addWorksheet('Semana a Semana');
+    ws1.columns = [
+        { header: 'Semana', key: 'weekLabel', width: 14 },
+        { header: 'Notas', key: 'totalNotas', width: 10 },
+        { header: 'Valor da Nota (R$)', key: 'valorMercadoria', width: 18 },
+        { header: 'Frete (R$)', key: 'valorFrete', width: 16 },
+        { header: '% da Nota', key: 'pctNota', width: 12 },
+    ];
+    ws1.getRow(1).font = { bold: true };
+    for (const r of weekly) {
+        ws1.addRow({
+            weekLabel: r.weekLabel,
+            totalNotas: r.totalNotas,
+            valorMercadoria: r.valorMercadoria,
+            valorFrete: r.valorFrete,
+            pctNota: r.pctNota !== null ? `${r.pctNota.toFixed(2)}%` : '-',
+        });
+    }
+    // ── Sheet 2: Mês a Mês ──
+    const ws2 = wb.addWorksheet('Mês a Mês');
+    ws2.columns = [
+        { header: 'Mês', key: 'monthLabel', width: 12 },
+        { header: 'Notas', key: 'totalNotas', width: 10 },
+        { header: 'Valor da Nota (R$)', key: 'valorMercadoria', width: 18 },
+        { header: 'Frete (R$)', key: 'valorFrete', width: 16 },
+        { header: '% da Nota', key: 'pctNota', width: 12 },
+        { header: 'Baseline (R$)', key: 'baseline', width: 16 },
+        { header: 'Δ vs Baseline (R$)', key: 'delta', width: 18 },
+    ];
+    ws2.getRow(1).font = { bold: true };
+    for (const r of monthly) {
+        const delta = baselineAvg !== null ? Math.round((r.valorFrete - baselineAvg) * 100) / 100 : null;
+        ws2.addRow({
+            monthLabel: r.monthLabel + (r.isCurrentMonth ? ' *' : ''),
+            totalNotas: r.totalNotas,
+            valorMercadoria: r.valorMercadoria,
+            valorFrete: r.valorFrete,
+            pctNota: r.pctNota !== null ? `${r.pctNota.toFixed(2)}%` : '-',
+            baseline: baselineAvg ?? '-',
+            delta: delta !== null ? delta : '-',
+        });
+    }
+    if (monthly.some((m) => m.isCurrentMonth)) {
+        ws2.addRow({ monthLabel: '* Mês em curso (parcial)' });
+    }
+    const safeName = cardData.clientName.replace(/[^a-zA-Z0-9 ]/g, '').trim().substring(0, 30);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="expansao_${safeName}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
 });
 // ── Activities ────────────────────────────────────────────────────────────────
 // GET /kanban/cards/:id/activities

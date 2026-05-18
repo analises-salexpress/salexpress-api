@@ -1,3 +1,22 @@
+export interface ExpansionWeekData {
+    year: number;
+    week: number;
+    weekLabel: string;
+    totalNotas: number;
+    valorMercadoria: number;
+    valorFrete: number;
+    pctNota: number | null;
+}
+export interface ExpansionMonthData {
+    year: number;
+    month: number;
+    monthLabel: string;
+    totalNotas: number;
+    valorMercadoria: number;
+    valorFrete: number;
+    pctNota: number | null;
+    isCurrentMonth: boolean;
+}
 export interface FilialPerformance {
     filial: string;
     cidade: string | null;
@@ -36,3 +55,5 @@ export declare function getDeliveryPerformanceBatch(cnpjs: string[], days?: numb
     performancePct: number | null;
     semaforo: FilialPerformance['semaforo'];
 }>>;
+export declare function getExpansionPresentationWeekly(cnpjs: string[], startDate: Date): Promise<ExpansionWeekData[]>;
+export declare function getExpansionPresentationMonthly(cnpjs: string[], startDate: Date): Promise<ExpansionMonthData[]>;

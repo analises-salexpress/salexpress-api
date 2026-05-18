@@ -1,5 +1,26 @@
 import { queryBI } from '../db/mysql'
 
+export interface ExpansionWeekData {
+  year:            number
+  week:            number
+  weekLabel:       string
+  totalNotas:      number
+  valorMercadoria: number
+  valorFrete:      number
+  pctNota:         number | null
+}
+
+export interface ExpansionMonthData {
+  year:            number
+  month:           number
+  monthLabel:      string
+  totalNotas:      number
+  valorMercadoria: number
+  valorFrete:      number
+  pctNota:         number | null
+  isCurrentMonth:  boolean
+}
+
 export interface FilialPerformance {
   filial:         string
   cidade:         string | null
@@ -243,4 +264,98 @@ export async function getDeliveryPerformanceBatch(
     result[r.cnpj] = { performancePct: pct, semaforo: semaforo(pct) }
   }
   return result
+}
+
+export async function getExpansionPresentationWeekly(
+  cnpjs: string[],
+  startDate: Date,
+): Promise<ExpansionWeekData[]> {
+  if (cnpjs.length === 0) return []
+  const { placeholders, params } = buildInClause(cnpjs)
+  const startStr = startDate.toISOString().slice(0, 10)
+
+  const rows = await queryBI<{
+    year:             number
+    week:             number
+    total_notas:      number
+    valor_mercadoria: number
+    valor_frete:      number
+    pct_nota:         number | null
+  }>(`
+    SELECT
+      YEAR(fn.data_emissao)                                               AS year,
+      WEEK(fn.data_emissao, 3)                                            AS week,
+      COUNT(*)                                                            AS total_notas,
+      ROUND(SUM(fn.valor_mercadoria), 2)                                  AS valor_mercadoria,
+      ROUND(SUM(fn.valor_frete), 2)                                       AS valor_frete,
+      ROUND(
+        SUM(fn.valor_frete) / NULLIF(SUM(fn.valor_mercadoria), 0) * 100, 4
+      )                                                                   AS pct_nota
+    FROM bexsal_dw.fato_notas fn
+    WHERE fn.cnpj_pagador IN (${placeholders})
+      AND fn.tipo_baixa NOT IN ('CANCELADO')
+      AND fn.data_emissao >= ?
+    GROUP BY YEAR(fn.data_emissao), WEEK(fn.data_emissao, 3)
+    ORDER BY year, week
+  `, [...params, startStr])
+
+  return rows.map((r) => ({
+    year:            Number(r.year),
+    week:            Number(r.week),
+    weekLabel:       `S${String(r.week).padStart(2, '0')}/${r.year}`,
+    totalNotas:      Number(r.total_notas),
+    valorMercadoria: Number(r.valor_mercadoria),
+    valorFrete:      Number(r.valor_frete),
+    pctNota:         r.pct_nota !== null ? Number(r.pct_nota) : null,
+  }))
+}
+
+export async function getExpansionPresentationMonthly(
+  cnpjs: string[],
+  startDate: Date,
+): Promise<ExpansionMonthData[]> {
+  if (cnpjs.length === 0) return []
+  const { placeholders, params } = buildInClause(cnpjs)
+  const now = new Date()
+  const startStr = startDate.toISOString().slice(0, 10)
+
+  const rows = await queryBI<{
+    year:             number
+    month:            number
+    total_notas:      number
+    valor_mercadoria: number
+    valor_frete:      number
+    pct_nota:         number | null
+  }>(`
+    SELECT
+      YEAR(fn.data_emissao)                                               AS year,
+      MONTH(fn.data_emissao)                                              AS month,
+      COUNT(*)                                                            AS total_notas,
+      ROUND(SUM(fn.valor_mercadoria), 2)                                  AS valor_mercadoria,
+      ROUND(SUM(fn.valor_frete), 2)                                       AS valor_frete,
+      ROUND(
+        SUM(fn.valor_frete) / NULLIF(SUM(fn.valor_mercadoria), 0) * 100, 4
+      )                                                                   AS pct_nota
+    FROM bexsal_dw.fato_notas fn
+    WHERE fn.cnpj_pagador IN (${placeholders})
+      AND fn.tipo_baixa NOT IN ('CANCELADO')
+      AND fn.data_emissao >= ?
+    GROUP BY YEAR(fn.data_emissao), MONTH(fn.data_emissao)
+    ORDER BY year, month
+  `, [...params, startStr])
+
+  return rows.map((r) => {
+    const y = Number(r.year)
+    const m = Number(r.month)
+    return {
+      year:            y,
+      month:           m,
+      monthLabel:      `${MONTH_NAMES[m - 1]}/${y}`,
+      totalNotas:      Number(r.total_notas),
+      valorMercadoria: Number(r.valor_mercadoria),
+      valorFrete:      Number(r.valor_frete),
+      pctNota:         r.pct_nota !== null ? Number(r.pct_nota) : null,
+      isCurrentMonth:  y === now.getFullYear() && m === now.getMonth() + 1,
+    }
+  })
 }
