@@ -80,7 +80,14 @@ router.get('/clients', async (req, res) => {
     const data = clients.map((c) => {
         const perf = perfMap[c.cnpj] ?? { performancePct: null, semaforo: 'no_data' };
         const bi = biMap[c.cnpj];
-        return { ...c, performance: perf, city: bi?.city ?? null, state: bi?.state ?? null };
+        return {
+            ...c,
+            performance: perf,
+            performancePct: perf.performancePct,
+            semaforo: perf.semaforo,
+            city: bi?.city ?? null,
+            state: bi?.state ?? null,
+        };
     });
     res.json(data);
 });
@@ -499,10 +506,15 @@ router.get('/dashboard', async (req, res) => {
     catch {
         // BI unavailable — dashboard still returns without performance data
     }
-    const clients = activeClients.map((c) => ({
-        ...c,
-        performance: perfMap[c.cnpj] ?? { performancePct: null, semaforo: 'no_data' },
-    }));
+    const clients = activeClients.map((c) => {
+        const perf = perfMap[c.cnpj] ?? { performancePct: null, semaforo: 'no_data' };
+        return {
+            ...c,
+            performance: perf,
+            performancePct: perf.performancePct,
+            semaforo: perf.semaforo,
+        };
+    });
     const summary = {
         totalActive: activeClients.length,
         greenCount: clients.filter((c) => c.performance.semaforo === 'green').length,
